@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TimberScanner</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow">PROTOTYP</p>
+        <h1>TimberScanner</h1>
+        <p>Livebild med detekterad röd laserlinje.</p>
+      </div>
+      <span id="health" class="status">Ansluter…</span>
+    </header>
+
+    <section class="camera-panel">
+      <img src="/api/camera/stream" alt="Livebild från skanningskameran">
+    </section>
+
+    <section class="metrics">
+      <article>
+        <span>Laserpunkter</span>
+        <strong id="point-count">0</strong>
+      </article>
+      <article>
+        <span>Konfidens</span>
+        <strong id="confidence">0 %</strong>
+      </article>
+      <article>
+        <span>Fas</span>
+        <strong id="phase">prototyp</strong>
+      </article>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
