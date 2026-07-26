@@ -1,0 +1,16 @@
+:root { font-family: Inter, system-ui, sans-serif; color: #e8edf2; background: #101417; }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top, #22303a, #101417 45%); }
+main { width: min(1180px, 94vw); margin: 0 auto; padding: 32px 0 48px; }
+header { display: flex; justify-content: space-between; gap: 24px; align-items: end; margin-bottom: 20px; }
+h1 { margin: 0; font-size: clamp(2rem, 5vw, 4rem); }
+p { color: #aebbc5; }
+.eyebrow { margin: 0 0 6px; letter-spacing: .16em; font-weight: 700; color: #d5a95f; }
+.status { padding: 8px 12px; border: 1px solid #3b4b56; border-radius: 999px; }
+.camera-panel { overflow: hidden; border-radius: 16px; background: #050708; border: 1px solid #33414a; aspect-ratio: 16 / 9; }
+.camera-panel img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 16px; }
+.metrics article { padding: 18px; border-radius: 12px; background: #172027; border: 1px solid #33414a; }
+.metrics span { display: block; color: #9aabb6; margin-bottom: 8px; }
+.metrics strong { font-size: 1.5rem; }
+@media (max-width: 700px) { header { align-items: start; flex-direction: column; } .metrics { grid-template-columns: 1fr; } }
