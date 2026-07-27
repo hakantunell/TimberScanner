@@ -3,7 +3,7 @@ const LOCAL_API_BASE = 'http://localhost:8787';
 function defaultApiBase() {
   const hostname = window.location.hostname;
   const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
-  return isLocal ? LOCAL_API_BASE : '/timber-sync';
+  return isLocal ? LOCAL_API_BASE : '/sync';
 }
 
 async function parseResponse(response) {
