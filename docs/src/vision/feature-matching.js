@@ -108,7 +108,7 @@ function matchFeatures(a, b, featuresA, featuresB) {
   return matches.slice(0, 80);
 }
 
-function draw(frameA, frameB, featuresA, featuresB, matches) {
+function draw(frameA, frameB, matches) {
   const gap = 12;
   canvas.width = frameA.width + frameB.width + gap;
   canvas.height = Math.max(frameA.height, frameB.height);
@@ -130,6 +130,23 @@ function draw(frameA, frameB, featuresA, featuresB, matches) {
     context.arc(frameA.width + gap + match.b.x, match.b.y, 2.5, 0, Math.PI * 2);
     context.fill();
   }
+}
+
+function publishMatches(frameA, frameB, matches, signature) {
+  window.dispatchEvent(new CustomEvent('timberscanner:feature-matches', {
+    detail: {
+      signature,
+      frameA: { width: frameA.width, height: frameA.height },
+      frameB: { width: frameB.width, height: frameB.height },
+      matches: matches.map((match) => ({
+        ax: match.a.x,
+        ay: match.a.y,
+        bx: match.b.x,
+        by: match.b.y,
+        score: match.score,
+      })),
+    },
+  }));
 }
 
 async function analyseLatestPair() {
@@ -155,7 +172,8 @@ async function analyseLatestPair() {
     const featuresA = detectFeatures(frameA);
     const featuresB = detectFeatures(frameB);
     const matches = matchFeatures(frameA, frameB, featuresA, featuresB);
-    draw(frameA, frameB, featuresA, featuresB, matches);
+    draw(frameA, frameB, matches);
+    publishMatches(frameA, frameB, matches, signature);
     const ratio = Math.round((matches.length / Math.max(1, Math.min(featuresA.length, featuresB.length))) * 100);
     if (matches.length >= 28) status.textContent = 'Bra överlappning';
     else if (matches.length >= 12) status.textContent = 'Användbar överlappning';
