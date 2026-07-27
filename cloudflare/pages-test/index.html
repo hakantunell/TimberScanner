@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>TimberScanner Pages-test</title>
+  <style>
+    body{font-family:system-ui,sans-serif;max-width:720px;margin:0 auto;padding:2rem;background:#f5f7f5;color:#17351f}
+    main{background:white;border-radius:14px;padding:2rem;box-shadow:0 8px 30px rgba(0,0,0,.08)}
+    .ok{color:#176b2c;font-weight:700}.bad{color:#a12622;font-weight:700}code{word-break:break-all}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>TimberScanner – Cloudflare Pages-test</h1>
+    <p id="result">Sidan laddades. Kör webbläsartest…</p>
+    <p><strong>Adress:</strong> <code id="location"></code></p>
+    <p><strong>Tid:</strong> <span id="time"></span></p>
+  </main>
+  <script>
+    document.querySelector('#location').textContent = location.href;
+    document.querySelector('#time').textContent = new Date().toLocaleString('sv-SE');
+    const result = document.querySelector('#result');
+    result.textContent = 'Cloudflare Pages fungerar från den här datorn.';
+    result.className = 'ok';
+  </script>
+</body>
+</html>
