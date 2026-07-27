@@ -12,14 +12,14 @@
     <header>
       <p class="eyebrow">Mobil prototyp</p>
       <h1>TimberScanner</h1>
-      <p>Öppna samma app på datorn och telefonen. Bilderna överförs via en tillfällig, privat Cloudflare-session.</p>
+      <p>Öppna samma app på datorn och telefonen. Kameramaterialet överförs via en tillfällig, privat Cloudflare-session och analyseras stegvis.</p>
     </header>
 
     <section id="role-picker" class="panel">
       <h2>Välj läge</h2>
       <div class="role-grid">
-        <button id="viewer-mode">Dator / visa bilder</button>
-        <button id="capture-mode">Telefon / fotografera</button>
+        <button id="viewer-mode">Dator / livevy</button>
+        <button id="capture-mode">Telefon / skanna</button>
       </div>
     </section>
 
@@ -58,29 +58,31 @@
     </section>
 
     <section class="status-grid">
-      <article><span>Bilder</span><strong id="image-count">0</strong></article>
+      <article><span>Bildrutor</span><strong id="image-count">0</strong></article>
       <article><span>Aktuell rotation</span><strong id="pass-count">1</strong></article>
       <article><span>Djupkälla</span><strong id="depth-source">Endast RGB</strong></article>
       <article><span>Lagring</span><strong id="storage-status">Startar</strong></article>
     </section>
 
     <section>
-      <h2>Insamlade bilder</h2>
+      <h2>Analysunderlag</h2>
+      <p>Bildrutorna visas bara under prototypfasen. Varje inkommande bild kvalitetskontrolleras automatiskt.</p>
       <div id="captures" class="captures"></div>
     </section>
 
     <section class="instructions">
       <h2>Testupplägg</h2>
       <ol>
-        <li>Öppna appen på datorn och välj Dator / visa bilder.</li>
+        <li>Öppna appen på datorn och välj Dator / livevy.</li>
         <li>Skanna QR-koden med telefonen. Telefonen ansluter till samma molnsession.</li>
-        <li>Starta kameran och ta överlappande bilder längs pinnen.</li>
+        <li>Starta kameran och ta överlappande bildrutor längs pinnen.</li>
         <li>Vrid pinnen 60–100° och välj Ny rotation.</li>
-        <li>Bilderna sparas lokalt i telefonen och laddas samtidigt upp till datorvyn.</li>
+        <li>Datorn visar materialet och markerar bildrutor som riskerar att vara oskarpa.</li>
       </ol>
     </section>
   </main>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   <script type="module" src="app.js"></script>
+  <script type="module" src="src/vision/live-analysis.js"></script>
 </body>
 </html>
