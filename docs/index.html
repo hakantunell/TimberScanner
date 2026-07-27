@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#17351f">
   <title>TimberScanner</title>
-  <link rel="stylesheet" href="styles.css?v=20260727-5">
+  <link rel="stylesheet" href="styles.css?v=20260727-6">
   <script type="importmap">
     {
       "imports": {
-        "./src/transfer/cloud-relay.js": "./src/transfer/cloud-relay.js?v=20260727-5"
+        "./src/transfer/cloud-relay.js": "./src/transfer/cloud-relay.js?v=20260727-6"
       }
     }
   </script>
@@ -91,6 +91,24 @@
         <article><span>Lagring</span><strong id="storage-status">Klar</strong></article>
       </section>
 
+      <section id="contour-diagnostics" class="diagnostic-panel" hidden>
+        <div class="diagnostic-heading">
+          <div>
+            <p class="eyebrow">Första geometristeget</p>
+            <h2>Konturdiagnostik</h2>
+          </div>
+          <div>
+            <strong id="contour-status">Väntar på bildruta</strong>
+            <span id="contour-coverage">Ingen analys ännu</span>
+          </div>
+        </div>
+        <div class="diagnostic-canvas-wrap">
+          <canvas id="contour-source" hidden></canvas>
+          <canvas id="contour-overlay"></canvas>
+        </div>
+        <p class="diagnostic-note">Grönt visar starka bildkanter och den gula rektangeln visar en första grov objektkandidat. Detta är diagnostik, inte en färdig stockkontur.</p>
+      </section>
+
       <section class="analysis-section">
         <h2>Analysunderlag</h2>
         <p>Bildrutorna visas bara under prototypfasen. Färgen visar aktuell skärpeklassning.</p>
@@ -99,7 +117,8 @@
     </section>
   </main>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script type="module" src="app.js?v=20260727-5"></script>
-  <script type="module" src="src/scanning/auto-capture.js?v=20260727-5"></script>
+  <script type="module" src="app.js?v=20260727-6"></script>
+  <script type="module" src="src/scanning/auto-capture.js?v=20260727-6"></script>
+  <script type="module" src="src/vision/contour-diagnostics.js?v=20260727-6"></script>
 </body>
 </html>
