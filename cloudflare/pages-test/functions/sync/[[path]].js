@@ -9,6 +9,7 @@ function translatePublicPath(suffix) {
 
   const sessionId = encodeURIComponent(parts[1]);
   if (parts.length === 2) return `/sessions/${sessionId}`;
+  if (parts[2] === 'ready' && parts.length === 3) return `/sessions/${sessionId}/connected`;
   if (parts[2] === 'frames' && parts.length === 3) return `/sessions/${sessionId}/images`;
   if (parts[2] === 'frames' && parts[3]) {
     return `/sessions/${sessionId}/images/${encodeURIComponent(parts[3])}`;
