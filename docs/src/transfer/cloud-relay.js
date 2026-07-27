@@ -1,7 +1,7 @@
 const WORKER_API_BASE = 'https://timber-scanner-api.hakan-tunell.workers.dev';
 
 function defaultApiBase() {
-  return window.location.hostname.endsWith('.pages.dev') ? '/api' : WORKER_API_BASE;
+  return window.location.hostname.endsWith('.pages.dev') ? '/timber-sync' : WORKER_API_BASE;
 }
 
 async function parseResponse(response) {
