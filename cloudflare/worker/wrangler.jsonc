@@ -1,0 +1,14 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "timber-scanner-api",
+  "main": "src/index.js",
+  "compatibility_date": "2026-07-27",
+  "r2_buckets": [
+    {
+      "binding": "SCANS"
+    }
+  ],
+  "vars": {
+    "ALLOWED_ORIGIN": "https://hakantunell.github.io"
+  }
+}
