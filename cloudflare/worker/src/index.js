@@ -15,10 +15,10 @@ function corsHeaders(origin, allowedOrigin) {
   };
 }
 
-function json(data, status, cors = {}) {
+function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { ...JSON_HEADERS, ...cors },
+    headers: { ...JSON_HEADERS, ...headers },
   });
 }
 
@@ -44,10 +44,28 @@ function imagePrefix(sessionId) {
   return `${SESSION_PREFIX}${sessionId}/images/`;
 }
 
+function sessionStub(env, sessionId) {
+  const id = env.SCAN_SESSIONS.idFromName(sessionId);
+  return env.SCAN_SESSIONS.get(id);
+}
+
 async function readSession(env, sessionId) {
   const object = await env.SCANS.get(sessionKey(sessionId));
   if (!object) return null;
   return object.json();
+}
+
+async function initialiseLiveSession(env, session) {
+  const stub = sessionStub(env, session.sessionId);
+  const response = await stub.fetch('https://session.internal/init', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: session.sessionId,
+      createdAt: session.createdAt,
+      expiresAt: session.expiresAt,
+    }),
+  });
+  if (!response.ok) throw new Error(`Could not initialise live session: ${response.status}`);
 }
 
 async function createSession(env) {
@@ -61,10 +79,12 @@ async function createSession(env) {
     createdAt: createdAt.toISOString(),
     expiresAt: expiresAt.toISOString(),
   };
+
   await env.SCANS.put(sessionKey(sessionId), JSON.stringify(session), {
     httpMetadata: { contentType: 'application/json' },
     customMetadata: { kind: 'session', expiresAt: session.expiresAt },
   });
+  await initialiseLiveSession(env, session);
   return session;
 }
 
@@ -85,6 +105,27 @@ async function listImages(env, sessionId) {
   }));
 }
 
+async function notifyImageUploaded(env, sessionId, image) {
+  const stub = sessionStub(env, sessionId);
+  const response = await stub.fetch('https://session.internal/images', {
+    method: 'POST',
+    body: JSON.stringify(image),
+  });
+  if (!response.ok) throw new Error(`Could not update live session: ${response.status}`);
+}
+
+async function readLiveState(env, sessionId) {
+  const stub = sessionStub(env, sessionId);
+  const response = await stub.fetch('https://session.internal/state');
+  if (!response.ok) return null;
+  return response.json();
+}
+
+async function deleteLiveSession(env, sessionId) {
+  const stub = sessionStub(env, sessionId);
+  await stub.fetch('https://session.internal/delete', { method: 'DELETE' });
+}
+
 async function deleteSession(env, sessionId) {
   let cursor;
   let deletedObjects = 0;
@@ -96,6 +137,7 @@ async function deleteSession(env, sessionId) {
     }
     cursor = page.truncated ? page.cursor : undefined;
   } while (cursor);
+  await deleteLiveSession(env, sessionId);
   return deletedObjects;
 }
 
@@ -113,7 +155,7 @@ async function cleanupExpiredSessions(env) {
       scannedSessions += 1;
 
       let expiresAt = object.customMetadata?.expiresAt;
-      let sessionId = object.key.slice(SESSION_PREFIX.length, -(`/${SESSION_FILE}`.length));
+      const sessionId = object.key.slice(SESSION_PREFIX.length, -(`/${SESSION_FILE}`.length));
       if (!expiresAt) {
         const session = await readSession(env, sessionId);
         expiresAt = session?.expiresAt;
@@ -133,12 +175,59 @@ async function cleanupExpiredSessions(env) {
 function validateConfiguration(env) {
   const missing = [];
   if (!env.SCANS) missing.push('R2 binding SCANS');
+  if (!env.SCAN_SESSIONS) missing.push('Durable Object binding SCAN_SESSIONS');
   return {
     ok: missing.length === 0,
     missing,
     retentionHours: retentionHours(env),
     maxImageBytes: MAX_IMAGE_BYTES,
+    sessionBackend: 'durable-object-sqlite',
+    imageBackend: 'r2',
   };
+}
+
+export class ScanSession {
+  constructor(state, env) {
+    this.state = state;
+    this.env = env;
+  }
+
+  async fetch(request) {
+    const url = new URL(request.url);
+
+    if (request.method === 'POST' && url.pathname === '/init') {
+      const existing = await this.state.storage.get('session');
+      if (!existing) {
+        const session = await request.json();
+        await this.state.storage.put('session', session);
+        await this.state.storage.put('images', []);
+      }
+      return json({ status: 'ready' });
+    }
+
+    if (request.method === 'POST' && url.pathname === '/images') {
+      const image = await request.json();
+      const images = (await this.state.storage.get('images')) ?? [];
+      const withoutDuplicate = images.filter((item) => item.id !== image.id);
+      withoutDuplicate.push(image);
+      await this.state.storage.put('images', withoutDuplicate);
+      return json({ status: 'recorded', imageCount: withoutDuplicate.length }, 201);
+    }
+
+    if (request.method === 'GET' && url.pathname === '/state') {
+      const session = await this.state.storage.get('session');
+      if (!session) return json({ error: 'Session not initialised' }, 404);
+      const images = (await this.state.storage.get('images')) ?? [];
+      return json({ ...session, images, imageCount: images.length });
+    }
+
+    if (request.method === 'DELETE' && url.pathname === '/delete') {
+      await this.state.storage.deleteAll();
+      return new Response(null, { status: 204 });
+    }
+
+    return json({ error: 'Not found' }, 404);
+  }
 }
 
 export default {
@@ -149,9 +238,15 @@ export default {
 
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
     if (url.pathname === '/health') {
-      return json({ status: configuration.ok ? 'ok' : 'configuration_error', ...configuration }, configuration.ok ? 200 : 503, cors);
+      return json(
+        { status: configuration.ok ? 'ok' : 'configuration_error', ...configuration },
+        configuration.ok ? 200 : 503,
+        cors,
+      );
     }
-    if (!configuration.ok) return json({ error: 'Worker configuration is incomplete', ...configuration }, 503, cors);
+    if (!configuration.ok) {
+      return json({ error: 'Worker configuration is incomplete', ...configuration }, 503, cors);
+    }
 
     if (request.method === 'POST' && url.pathname === '/sessions') {
       const session = await createSession(env);
@@ -170,9 +265,21 @@ export default {
       return json({ error: 'Session expired' }, 410, cors);
     }
 
+    if (request.method === 'GET' && tail === '') {
+      if (!authorized(request, session, 'view')) return json({ error: 'Unauthorized' }, 401, cors);
+      const live = await readLiveState(env, sessionId);
+      return json({ sessionId, expiresAt: session.expiresAt, live }, 200, cors);
+    }
+
     if (request.method === 'GET' && tail === 'images') {
       if (!authorized(request, session, 'view')) return json({ error: 'Unauthorized' }, 401, cors);
-      return json({ sessionId, expiresAt: session.expiresAt, images: await listImages(env, sessionId) }, 200, cors);
+      const live = await readLiveState(env, sessionId);
+      return json({
+        sessionId,
+        expiresAt: session.expiresAt,
+        images: await listImages(env, sessionId),
+        live,
+      }, 200, cors);
     }
 
     const imageMatch = tail.match(/^images\/([^/]+)$/);
@@ -187,11 +294,23 @@ export default {
       const contentType = request.headers.get('content-type') ?? 'image/jpeg';
       const pass = url.searchParams.get('pass') ?? '1';
       const capturedAt = url.searchParams.get('capturedAt') ?? new Date().toISOString();
-      await env.SCANS.put(`${imagePrefix(sessionId)}${imageId}`, request.body, {
+      const key = `${imagePrefix(sessionId)}${imageId}`;
+
+      await env.SCANS.put(key, request.body, {
         httpMetadata: { contentType },
         customMetadata: { pass, capturedAt },
       });
-      return json({ imageId }, 201, cors);
+
+      const stored = await env.SCANS.head(key);
+      const image = {
+        id: imageId,
+        size: stored?.size ?? contentLength ?? null,
+        pass,
+        capturedAt,
+        uploadedAt: new Date().toISOString(),
+      };
+      await notifyImageUploaded(env, sessionId, image);
+      return json({ imageId, live: image }, 201, cors);
     }
 
     if (imageMatch && request.method === 'GET') {
