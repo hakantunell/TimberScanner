@@ -4,7 +4,7 @@ export function createSession() {
   const now = new Date().toISOString();
   return {
     id: ACTIVE_SESSION_ID,
-    schemaVersion: 1,
+    schemaVersion: 2,
     createdAt: now,
     updatedAt: now,
     currentPass: 1,
@@ -39,7 +39,7 @@ export function setScaleReference(session, millimetres) {
   };
 }
 
-export function createCapture({ blob, width, height, pass }) {
+export function createCapture({ blob, width, height, pass, quality = null }) {
   return {
     id: crypto.randomUUID(),
     pass,
@@ -47,7 +47,9 @@ export function createCapture({ blob, width, height, pass }) {
     width,
     height,
     blob,
+    quality,
     markerObservations: [],
+    contourObservation: null,
     depthFrame: null,
   };
 }
