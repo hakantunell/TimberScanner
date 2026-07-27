@@ -16,19 +16,13 @@ function corsHeaders(origin, allowedOrigin) {
 }
 
 function json(data, status = 200, headers = {}) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...JSON_HEADERS, ...headers },
-  });
+  return new Response(JSON.stringify(data), { status, headers: { ...JSON_HEADERS, ...headers } });
 }
 
 function randomToken(bytes = 18) {
   const values = new Uint8Array(bytes);
   crypto.getRandomValues(values);
-  return btoa(String.fromCharCode(...values))
-    .replaceAll('+', '-')
-    .replaceAll('/', '_')
-    .replaceAll('=', '');
+  return btoa(String.fromCharCode(...values)).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
 }
 
 function retentionHours(env) {
@@ -36,42 +30,26 @@ function retentionHours(env) {
   return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_RETENTION_HOURS;
 }
 
-function sessionKey(sessionId) {
-  return `${SESSION_PREFIX}${sessionId}/${SESSION_FILE}`;
-}
-
-function imagePrefix(sessionId) {
-  return `${SESSION_PREFIX}${sessionId}/images/`;
-}
+const sessionKey = (sessionId) => `${SESSION_PREFIX}${sessionId}/${SESSION_FILE}`;
+const imagePrefix = (sessionId) => `${SESSION_PREFIX}${sessionId}/images/`;
 
 function sessionStub(env, sessionId) {
-  const id = env.SCAN_SESSIONS.idFromName(sessionId);
-  return env.SCAN_SESSIONS.get(id);
+  return env.SCAN_SESSIONS.get(env.SCAN_SESSIONS.idFromName(sessionId));
 }
 
 async function readSession(env, sessionId) {
   const object = await env.SCANS.get(sessionKey(sessionId));
-  if (!object) return null;
-  return object.json();
+  return object ? object.json() : null;
 }
 
-async function initialiseLiveSession(env, session) {
-  const stub = sessionStub(env, session.sessionId);
-  const response = await stub.fetch('https://session.internal/init', {
-    method: 'POST',
-    body: JSON.stringify({
-      sessionId: session.sessionId,
-      createdAt: session.createdAt,
-      expiresAt: session.expiresAt,
-    }),
-  });
-  if (!response.ok) throw new Error(`Could not initialise live session: ${response.status}`);
+async function callLive(env, sessionId, path, init) {
+  return sessionStub(env, sessionId).fetch(`https://session.internal${path}`, init);
 }
 
 async function createSession(env) {
   const sessionId = randomToken(8);
   const createdAt = new Date();
-  const expiresAt = new Date(createdAt.getTime() + retentionHours(env) * 60 * 60 * 1000);
+  const expiresAt = new Date(createdAt.getTime() + retentionHours(env) * 3600000);
   const session = {
     sessionId,
     uploadToken: randomToken(),
@@ -79,19 +57,21 @@ async function createSession(env) {
     createdAt: createdAt.toISOString(),
     expiresAt: expiresAt.toISOString(),
   };
-
   await env.SCANS.put(sessionKey(sessionId), JSON.stringify(session), {
     httpMetadata: { contentType: 'application/json' },
     customMetadata: { kind: 'session', expiresAt: session.expiresAt },
   });
-  await initialiseLiveSession(env, session);
+  const response = await callLive(env, sessionId, '/init', {
+    method: 'POST',
+    body: JSON.stringify({ sessionId, createdAt: session.createdAt, expiresAt: session.expiresAt }),
+  });
+  if (!response.ok) throw new Error(`Could not initialise live session: ${response.status}`);
   return session;
 }
 
 function authorized(request, session, tokenType) {
-  const header = tokenType === 'upload' ? 'x-upload-token' : 'x-view-token';
-  const expected = tokenType === 'upload' ? session.uploadToken : session.viewToken;
-  return request.headers.get(header) === expected;
+  const upload = tokenType === 'upload';
+  return request.headers.get(upload ? 'x-upload-token' : 'x-view-token') === (upload ? session.uploadToken : session.viewToken);
 }
 
 async function listImages(env, sessionId) {
@@ -105,71 +85,54 @@ async function listImages(env, sessionId) {
   }));
 }
 
-async function notifyImageUploaded(env, sessionId, image) {
-  const stub = sessionStub(env, sessionId);
-  const response = await stub.fetch('https://session.internal/images', {
-    method: 'POST',
-    body: JSON.stringify(image),
-  });
-  if (!response.ok) throw new Error(`Could not update live session: ${response.status}`);
-}
-
-async function readLiveState(env, sessionId) {
-  const stub = sessionStub(env, sessionId);
-  const response = await stub.fetch('https://session.internal/state');
-  if (!response.ok) return null;
-  return response.json();
-}
-
-async function deleteLiveSession(env, sessionId) {
-  const stub = sessionStub(env, sessionId);
-  await stub.fetch('https://session.internal/delete', { method: 'DELETE' });
+async function deleteImages(env, sessionId) {
+  let cursor;
+  let deleted = 0;
+  do {
+    const page = await env.SCANS.list({ prefix: imagePrefix(sessionId), cursor });
+    if (page.objects.length) {
+      await env.SCANS.delete(page.objects.map((object) => object.key));
+      deleted += page.objects.length;
+    }
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+  await callLive(env, sessionId, '/images', { method: 'DELETE' });
+  return deleted;
 }
 
 async function deleteSession(env, sessionId) {
   let cursor;
-  let deletedObjects = 0;
+  let deleted = 0;
   do {
     const page = await env.SCANS.list({ prefix: `${SESSION_PREFIX}${sessionId}/`, cursor });
     if (page.objects.length) {
       await env.SCANS.delete(page.objects.map((object) => object.key));
-      deletedObjects += page.objects.length;
+      deleted += page.objects.length;
     }
     cursor = page.truncated ? page.cursor : undefined;
   } while (cursor);
-  await deleteLiveSession(env, sessionId);
-  return deletedObjects;
+  await callLive(env, sessionId, '/delete', { method: 'DELETE' });
+  return deleted;
 }
 
 async function cleanupExpiredSessions(env) {
   let cursor;
-  let scannedSessions = 0;
-  let deletedSessions = 0;
-  let deletedObjects = 0;
-  const now = Date.now();
-
+  const result = { scannedSessions: 0, deletedSessions: 0, deletedObjects: 0 };
   do {
     const page = await env.SCANS.list({ prefix: SESSION_PREFIX, cursor, include: ['customMetadata'] });
     for (const object of page.objects) {
       if (!object.key.endsWith(`/${SESSION_FILE}`)) continue;
-      scannedSessions += 1;
-
-      let expiresAt = object.customMetadata?.expiresAt;
+      result.scannedSessions += 1;
       const sessionId = object.key.slice(SESSION_PREFIX.length, -(`/${SESSION_FILE}`.length));
-      if (!expiresAt) {
-        const session = await readSession(env, sessionId);
-        expiresAt = session?.expiresAt;
-      }
-
-      if (expiresAt && new Date(expiresAt).getTime() <= now) {
-        deletedObjects += await deleteSession(env, sessionId);
-        deletedSessions += 1;
+      const expiresAt = object.customMetadata?.expiresAt ?? (await readSession(env, sessionId))?.expiresAt;
+      if (expiresAt && new Date(expiresAt).getTime() <= Date.now()) {
+        result.deletedObjects += await deleteSession(env, sessionId);
+        result.deletedSessions += 1;
       }
     }
     cursor = page.truncated ? page.cursor : undefined;
   } while (cursor);
-
-  return { scannedSessions, deletedSessions, deletedObjects };
+  return result;
 }
 
 function validateConfiguration(env) {
@@ -194,38 +157,51 @@ export class ScanSession {
 
   async fetch(request) {
     const url = new URL(request.url);
-
     if (request.method === 'POST' && url.pathname === '/init') {
-      const existing = await this.state.storage.get('session');
-      if (!existing) {
-        const session = await request.json();
-        await this.state.storage.put('session', session);
+      if (!(await this.state.storage.get('session'))) {
+        await this.state.storage.put('session', await request.json());
         await this.state.storage.put('images', []);
+        await this.state.storage.put('connected', false);
+        await this.state.storage.put('revision', 0);
       }
       return json({ status: 'ready' });
     }
-
+    if (request.method === 'POST' && url.pathname === '/connected') {
+      await this.state.storage.put('connected', true);
+      await this.state.storage.put('connectedAt', new Date().toISOString());
+      return json({ status: 'connected' });
+    }
     if (request.method === 'POST' && url.pathname === '/images') {
       const image = await request.json();
       const images = (await this.state.storage.get('images')) ?? [];
-      const withoutDuplicate = images.filter((item) => item.id !== image.id);
-      withoutDuplicate.push(image);
-      await this.state.storage.put('images', withoutDuplicate);
-      return json({ status: 'recorded', imageCount: withoutDuplicate.length }, 201);
+      const updated = images.filter((item) => item.id !== image.id);
+      updated.push(image);
+      await this.state.storage.put('images', updated);
+      return json({ status: 'recorded', imageCount: updated.length }, 201);
     }
-
+    if (request.method === 'DELETE' && url.pathname === '/images') {
+      await this.state.storage.put('images', []);
+      const revision = ((await this.state.storage.get('revision')) ?? 0) + 1;
+      await this.state.storage.put('revision', revision);
+      return json({ status: 'cleared', revision });
+    }
     if (request.method === 'GET' && url.pathname === '/state') {
       const session = await this.state.storage.get('session');
       if (!session) return json({ error: 'Session not initialised' }, 404);
       const images = (await this.state.storage.get('images')) ?? [];
-      return json({ ...session, images, imageCount: images.length });
+      return json({
+        ...session,
+        images,
+        imageCount: images.length,
+        connected: (await this.state.storage.get('connected')) ?? false,
+        connectedAt: (await this.state.storage.get('connectedAt')) ?? null,
+        revision: (await this.state.storage.get('revision')) ?? 0,
+      });
     }
-
     if (request.method === 'DELETE' && url.pathname === '/delete') {
       await this.state.storage.deleteAll();
       return new Response(null, { status: 204 });
     }
-
     return json({ error: 'Not found' }, 404);
   }
 }
@@ -235,84 +211,63 @@ export default {
     const url = new URL(request.url);
     const cors = corsHeaders(request.headers.get('origin'), env.ALLOWED_ORIGIN);
     const configuration = validateConfiguration(env);
-
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
-    if (url.pathname === '/health') {
-      return json(
-        { status: configuration.ok ? 'ok' : 'configuration_error', ...configuration },
-        configuration.ok ? 200 : 503,
-        cors,
-      );
-    }
-    if (!configuration.ok) {
-      return json({ error: 'Worker configuration is incomplete', ...configuration }, 503, cors);
-    }
+    if (url.pathname === '/health') return json({ status: configuration.ok ? 'ok' : 'configuration_error', ...configuration }, configuration.ok ? 200 : 503, cors);
+    if (!configuration.ok) return json({ error: 'Worker configuration is incomplete', ...configuration }, 503, cors);
+    if (request.method === 'POST' && url.pathname === '/sessions') return json(await createSession(env), 201, cors);
 
-    if (request.method === 'POST' && url.pathname === '/sessions') {
-      const session = await createSession(env);
-      return json(session, 201, cors);
-    }
-
-    const sessionMatch = url.pathname.match(/^\/sessions\/([^/]+)(?:\/(.*))?$/);
-    if (!sessionMatch) return json({ error: 'Not found' }, 404, cors);
-
-    const [, sessionId, tail = ''] = sessionMatch;
+    const match = url.pathname.match(/^\/sessions\/([^/]+)(?:\/(.*))?$/);
+    if (!match) return json({ error: 'Not found' }, 404, cors);
+    const [, sessionId, tail = ''] = match;
     const session = await readSession(env, sessionId);
     if (!session) return json({ error: 'Session not found' }, 404, cors);
-
     if (new Date(session.expiresAt).getTime() < Date.now()) {
       await deleteSession(env, sessionId);
       return json({ error: 'Session expired' }, 410, cors);
     }
 
+    if (request.method === 'POST' && tail === 'connected') {
+      if (!authorized(request, session, 'upload')) return json({ error: 'Unauthorized' }, 401, cors);
+      const response = await callLive(env, sessionId, '/connected', { method: 'POST' });
+      return new Response(response.body, { status: response.status, headers: { ...cors, ...JSON_HEADERS } });
+    }
     if (request.method === 'GET' && tail === '') {
       if (!authorized(request, session, 'view')) return json({ error: 'Unauthorized' }, 401, cors);
-      const live = await readLiveState(env, sessionId);
-      return json({ sessionId, expiresAt: session.expiresAt, live }, 200, cors);
+      const liveResponse = await callLive(env, sessionId, '/state');
+      return json({ sessionId, expiresAt: session.expiresAt, live: liveResponse.ok ? await liveResponse.json() : null }, 200, cors);
     }
-
     if (request.method === 'GET' && tail === 'images') {
       if (!authorized(request, session, 'view')) return json({ error: 'Unauthorized' }, 401, cors);
-      const live = await readLiveState(env, sessionId);
-      return json({
-        sessionId,
-        expiresAt: session.expiresAt,
-        images: await listImages(env, sessionId),
-        live,
-      }, 200, cors);
+      const liveResponse = await callLive(env, sessionId, '/state');
+      return json({ sessionId, expiresAt: session.expiresAt, images: await listImages(env, sessionId), live: liveResponse.ok ? await liveResponse.json() : null }, 200, cors);
+    }
+    if (request.method === 'DELETE' && tail === 'images') {
+      const allowed = authorized(request, session, 'upload') || authorized(request, session, 'view');
+      if (!allowed) return json({ error: 'Unauthorized' }, 401, cors);
+      return json({ status: 'cleared', deletedImages: await deleteImages(env, sessionId) }, 200, cors);
     }
 
     const imageMatch = tail.match(/^images\/([^/]+)$/);
     if (imageMatch && request.method === 'PUT') {
       if (!authorized(request, session, 'upload')) return json({ error: 'Unauthorized' }, 401, cors);
       const contentLength = Number(request.headers.get('content-length'));
-      if (Number.isFinite(contentLength) && contentLength > MAX_IMAGE_BYTES) {
-        return json({ error: 'Image too large', maxBytes: MAX_IMAGE_BYTES }, 413, cors);
-      }
-
+      if (Number.isFinite(contentLength) && contentLength > MAX_IMAGE_BYTES) return json({ error: 'Image too large', maxBytes: MAX_IMAGE_BYTES }, 413, cors);
       const imageId = imageMatch[1];
-      const contentType = request.headers.get('content-type') ?? 'image/jpeg';
+      const key = `${imagePrefix(sessionId)}${imageId}`;
       const pass = url.searchParams.get('pass') ?? '1';
       const capturedAt = url.searchParams.get('capturedAt') ?? new Date().toISOString();
-      const key = `${imagePrefix(sessionId)}${imageId}`;
-
+      const width = url.searchParams.get('width') ?? '';
+      const height = url.searchParams.get('height') ?? '';
       await env.SCANS.put(key, request.body, {
-        httpMetadata: { contentType },
-        customMetadata: { pass, capturedAt },
+        httpMetadata: { contentType: request.headers.get('content-type') ?? 'image/jpeg' },
+        customMetadata: { pass, capturedAt, width, height },
       });
-
       const stored = await env.SCANS.head(key);
-      const image = {
-        id: imageId,
-        size: stored?.size ?? contentLength ?? null,
-        pass,
-        capturedAt,
-        uploadedAt: new Date().toISOString(),
-      };
-      await notifyImageUploaded(env, sessionId, image);
+      const image = { id: imageId, size: stored?.size ?? contentLength ?? null, pass, capturedAt, uploadedAt: new Date().toISOString() };
+      const liveResponse = await callLive(env, sessionId, '/images', { method: 'POST', body: JSON.stringify(image) });
+      if (!liveResponse.ok) throw new Error(`Could not update live session: ${liveResponse.status}`);
       return json({ imageId, live: image }, 201, cors);
     }
-
     if (imageMatch && request.method === 'GET') {
       if (!authorized(request, session, 'view')) return json({ error: 'Unauthorized' }, 401, cors);
       const object = await env.SCANS.get(`${imagePrefix(sessionId)}${imageMatch[1]}`);
@@ -323,16 +278,13 @@ export default {
       headers.set('cache-control', 'no-store');
       return new Response(object.body, { headers });
     }
-
     if (request.method === 'DELETE' && tail === '') {
       if (!authorized(request, session, 'view')) return json({ error: 'Unauthorized' }, 401, cors);
       await deleteSession(env, sessionId);
       return new Response(null, { status: 204, headers: cors });
     }
-
     return json({ error: 'Not found' }, 404, cors);
   },
-
   async scheduled(_event, env, ctx) {
     ctx.waitUntil(cleanupExpiredSessions(env));
   },
