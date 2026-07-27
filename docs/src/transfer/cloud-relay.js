@@ -1,9 +1,23 @@
 const LOCAL_API_BASE = 'http://localhost:8787';
+const DEFAULT_TIMEOUT_MS = 12000;
 
 function defaultApiBase() {
   const hostname = window.location.hostname;
   const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
   return isLocal ? LOCAL_API_BASE : '/sync';
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error(`Anropet tog längre än ${Math.round(timeoutMs / 1000)} sekunder: ${url}`);
+    throw error;
+  } finally {
+    window.clearTimeout(timer);
+  }
 }
 
 async function parseResponse(response) {
@@ -24,19 +38,19 @@ export class CloudRelay {
   }
 
   async health() {
-    return parseResponse(await fetch(`${this.apiBase}/health`, { cache: 'no-store' }));
+    return parseResponse(await fetchWithTimeout(`${this.apiBase}/health`, { cache: 'no-store' }, 8000));
   }
 
   async createSession() {
-    return parseResponse(await fetch(`${this.apiBase}/start`, {
+    return parseResponse(await fetchWithTimeout(`${this.apiBase}/start`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: '{}',
-    }));
+    }, 12000));
   }
 
   async markConnected(remoteSession) {
-    return parseResponse(await fetch(
+    return parseResponse(await fetchWithTimeout(
       `${this.apiBase}/link/${encodeURIComponent(remoteSession.sessionId)}/ready`,
       {
         method: 'POST',
@@ -49,7 +63,7 @@ export class CloudRelay {
     const headers = {};
     if (remoteSession.viewToken) headers['x-view-token'] = remoteSession.viewToken;
     else headers['x-upload-token'] = remoteSession.uploadToken;
-    return parseResponse(await fetch(
+    return parseResponse(await fetchWithTimeout(
       `${this.apiBase}/link/${encodeURIComponent(remoteSession.sessionId)}/frames`,
       { method: 'DELETE', headers },
     ));
@@ -62,7 +76,7 @@ export class CloudRelay {
       width: String(capture.width),
       height: String(capture.height),
     });
-    return parseResponse(await fetch(
+    return parseResponse(await fetchWithTimeout(
       `${this.apiBase}/link/${encodeURIComponent(remoteSession.sessionId)}/frames/${encodeURIComponent(capture.id)}?${query}`,
       {
         method: 'PUT',
@@ -72,31 +86,33 @@ export class CloudRelay {
         },
         body: capture.blob,
       },
+      30000,
     ));
   }
 
   async listImages(remoteSession) {
-    return parseResponse(await fetch(
+    return parseResponse(await fetchWithTimeout(
       `${this.apiBase}/link/${encodeURIComponent(remoteSession.sessionId)}/frames`,
       { headers: { 'x-view-token': remoteSession.viewToken }, cache: 'no-store' },
     ));
   }
 
   async downloadImage(remoteSession, imageId) {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `${this.apiBase}/link/${encodeURIComponent(remoteSession.sessionId)}/frames/${encodeURIComponent(imageId)}`,
       { headers: { 'x-view-token': remoteSession.viewToken }, cache: 'no-store' },
+      30000,
     );
     if (!response.ok) throw new Error(`Kunde inte hämta bild: HTTP ${response.status}`);
     return response.blob();
   }
 
   async deleteSession(remoteSession) {
-    return parseResponse(await fetch(
+    return parseResponse(await fetchWithTimeout(
       `${this.apiBase}/link/${encodeURIComponent(remoteSession.sessionId)}`,
       { method: 'DELETE', headers: { 'x-view-token': remoteSession.viewToken } },
     ));
   }
 }
 
-export { LOCAL_API_BASE, defaultApiBase };
+export { LOCAL_API_BASE, defaultApiBase, fetchWithTimeout };
