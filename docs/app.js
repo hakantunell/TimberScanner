@@ -10,9 +10,8 @@ import { deleteSession, loadSession, saveSession } from './src/storage/session-s
 import { CloudRelay } from './src/transfer/cloud-relay.js';
 import { analyseCanvasQuality, describeSharpness } from './src/vision/image-quality.js';
 
-const byId = (id) => document.querySelector(`#${id}`);
 const required = (id) => {
-  const element = byId(id);
+  const element = document.querySelector(`#${id}`);
   if (!element) throw new Error(`Appens HTML saknar elementet #${id}. Ladda om sidan.`);
   return element;
 };
@@ -55,6 +54,7 @@ let mode = null;
 let remoteSession = null;
 let pollTimer = null;
 let pairingUrl = null;
+let cloudRevision = null;
 
 function showConnectionScreen() {
   connectionScreen.hidden = false;
@@ -87,25 +87,19 @@ function clearPreviewUrls() {
   previewUrls.clear();
 }
 
-function qualityClass(quality) {
-  if (!quality) return 'quality-pending';
-  return `quality-${quality.sharpness}`;
-}
-
 function renderCaptures() {
   clearPreviewUrls();
   captures.replaceChildren();
   for (const capture of [...session.images].reverse()) {
     const figure = document.createElement('figure');
-    figure.className = qualityClass(capture.quality);
+    figure.className = capture.quality ? `quality-${capture.quality.sharpness}` : 'quality-pending';
     const image = document.createElement('img');
     const url = URL.createObjectURL(capture.blob);
     previewUrls.add(url);
     image.src = url;
     image.alt = `Bildruta, rotation ${capture.pass}`;
     const caption = document.createElement('figcaption');
-    const qualityText = capture.quality ? describeSharpness(capture.quality) : 'Analys väntar';
-    caption.textContent = `Rotation ${capture.pass} · ${qualityText}`;
+    caption.textContent = `Rotation ${capture.pass} · ${capture.quality ? describeSharpness(capture.quality) : 'Analys väntar'}`;
     figure.append(image, caption);
     captures.append(figure);
   }
@@ -115,6 +109,15 @@ async function persistSession() {
   storageStatus.textContent = 'Sparar';
   await saveSession(session);
   storageStatus.textContent = 'Sparad lokalt';
+}
+
+async function clearLocalSession() {
+  await deleteSession(ACTIVE_SESSION_ID);
+  session = createSession();
+  scaleInput.value = '';
+  renderCaptures();
+  refreshStatus();
+  storageStatus.textContent = 'Ny skanning';
 }
 
 async function analyseBlob(blob) {
@@ -183,11 +186,14 @@ async function captureImage() {
   }
 }
 
-async function receiveCloudImages() {
-  if (!remoteSession?.viewToken) return;
-  const result = await relay.listImages(remoteSession);
-  const missing = result.images.filter((image) => !session.images.some((item) => item.id === image.id));
+async function replaceWithCloudImages(result) {
+  const cloudIds = new Set(result.images.map((image) => image.id));
+  const removedLocally = session.images.some((image) => !cloudIds.has(image.id));
+  if (removedLocally) {
+    session = { ...session, images: session.images.filter((image) => cloudIds.has(image.id)) };
+  }
 
+  const missing = result.images.filter((image) => !session.images.some((item) => item.id === image.id));
   for (const imageInfo of missing) {
     const blob = await relay.downloadImage(remoteSession, imageInfo.id);
     const metadata = imageInfo.metadata ?? {};
@@ -203,24 +209,44 @@ async function receiveCloudImages() {
     });
   }
 
-  if (missing.length) {
+  if (removedLocally || missing.length) {
     await persistSession();
     renderCaptures();
     refreshStatus();
+  }
+}
+
+async function receiveCloudState() {
+  if (!remoteSession?.viewToken) return;
+  const result = await relay.listImages(remoteSession);
+  const revision = result.live?.revision ?? 0;
+  if (cloudRevision !== null && revision !== cloudRevision && result.images.length === 0) {
+    await clearLocalSession();
+  }
+  cloudRevision = revision;
+  await replaceWithCloudImages(result);
+
+  if (result.live?.connected) {
     showWorkScreen();
     workStatus.textContent = 'Telefon ansluten';
+    workDetail.textContent = `${result.images.length} bildrutor i molnet`;
+  } else {
+    connectionStatus.textContent = 'Väntar på telefonen';
   }
-  workDetail.textContent = `${result.images.length} bildrutor i molnet`;
 }
 
 function startPolling() {
   stopPolling();
   const poll = async () => {
-    try { await receiveCloudImages(); }
-    catch (error) { workDetail.textContent = `Synkfel: ${error.message}`; console.error(error); }
+    try { await receiveCloudState(); }
+    catch (error) {
+      const target = workScreen.hidden ? connectionStatus : workDetail;
+      target.textContent = `Synkfel: ${error.message}`;
+      console.error(error);
+    }
   };
   poll();
-  pollTimer = window.setInterval(poll, 2000);
+  pollTimer = window.setInterval(poll, 1000);
 }
 
 function stopPolling() {
@@ -248,18 +274,14 @@ async function exportSession() {
   URL.revokeObjectURL(url);
 }
 
-async function clearLocalSession() {
-  await deleteSession(ACTIVE_SESSION_ID);
-  session = createSession();
-  scaleInput.value = '';
-  renderCaptures();
-  refreshStatus();
-  storageStatus.textContent = 'Ny skanning';
-}
-
 async function resetSession() {
-  if (!confirm('Rensa den lokala skanningen på den här enheten?')) return;
+  if (!confirm('Rensa hela skanningen på både telefonen, datorn och i molnet?')) return;
+  workDetail.textContent = 'Rensar skanningen…';
+  if (remoteSession?.sessionId && (remoteSession.uploadToken || remoteSession.viewToken)) {
+    await relay.clearImages(remoteSession);
+  }
   await clearLocalSession();
+  workDetail.textContent = 'Skanningen är rensad';
 }
 
 function encodeCaptureCode(value) {
@@ -292,6 +314,7 @@ async function startViewerMode() {
   await clearLocalSession();
   await relay.health();
   remoteSession = await relay.createSession();
+  cloudRevision = 0;
 
   const url = new URL(window.location.href);
   url.search = '';
@@ -305,14 +328,19 @@ async function startViewerMode() {
   startPolling();
 }
 
+async function activateCaptureConnection(cloudSession) {
+  remoteSession = cloudSession;
+  sessionCode.value = encodeCaptureCode(cloudSession);
+  workStatus.textContent = 'Kopplad till datorn';
+  workDetail.textContent = 'Starta kameran för att börja skanna';
+  showWorkScreen();
+  await relay.markConnected(remoteSession);
+}
+
 async function startCaptureMode(cloudSession = null) {
   mode = 'capture';
-  remoteSession = cloudSession;
   if (cloudSession) {
-    sessionCode.value = encodeCaptureCode(cloudSession);
-    workStatus.textContent = 'Kopplad till datorn';
-    workDetail.textContent = 'Starta kameran för att börja skanna';
-    showWorkScreen();
+    await activateCaptureConnection(cloudSession);
   } else {
     showConnectionScreen();
     manualConnect.hidden = false;
@@ -323,10 +351,7 @@ async function startCaptureMode(cloudSession = null) {
 }
 
 async function connectCaptureCode() {
-  remoteSession = decodeCaptureCode(sessionCode.value.trim());
-  workStatus.textContent = 'Kopplad till datorn';
-  workDetail.textContent = 'Starta kameran för att börja skanna';
-  showWorkScreen();
+  await activateCaptureConnection(decodeCaptureCode(sessionCode.value.trim()));
 }
 
 async function initialise() {
@@ -361,7 +386,7 @@ startButton.addEventListener('click', () => startCamera().then(() => { startButt
 captureButton.addEventListener('click', () => captureImage().catch((error) => { workDetail.textContent = error.message; }));
 newPassButton.addEventListener('click', () => startNewPass().catch(console.error));
 exportButton.addEventListener('click', () => exportSession().catch(console.error));
-resetButton.addEventListener('click', () => resetSession().catch(console.error));
+resetButton.addEventListener('click', () => resetSession().catch((error) => { workDetail.textContent = `Kunde inte rensa: ${error.message}`; }));
 scaleInput.addEventListener('change', async () => {
   const value = Number(scaleInput.value);
   session = setScaleReference(session, value > 0 ? value : null);
