@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>TimberScanner metodtest</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 760px; margin: 3rem auto; padding: 0 1rem; }
+    button { font: inherit; padding: .75rem 1rem; }
+    pre { white-space: pre-wrap; background: #f3f3f3; padding: 1rem; border-radius: .5rem; }
+  </style>
+</head>
+<body>
+  <h1>Test av POST till Cloudflare Pages</h1>
+  <p>Testet använder samma sökväg som redan fungerar med GET: <code>/timber-sync/ping</code>.</p>
+  <button id="run">Kör POST-test</button>
+  <pre id="result">Inte kört ännu.</pre>
+  <script>
+    document.querySelector('#run').addEventListener('click', async () => {
+      const result = document.querySelector('#result');
+      result.textContent = 'Kör test…';
+      try {
+        const response = await fetch('/timber-sync/ping', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ test: true, timestamp: new Date().toISOString() }),
+          cache: 'no-store',
+        });
+        const text = await response.text();
+        result.textContent = `HTTP ${response.status}\n\n${text}`;
+      } catch (error) {
+        result.textContent = `Fel: ${error.message}`;
+      }
+    });
+  </script>
+</body>
+</html>
