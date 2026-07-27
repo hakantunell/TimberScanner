@@ -12,7 +12,6 @@
     <header>
       <p class="eyebrow">Mobil prototyp</p>
       <h1>TimberScanner</h1>
-      <p>Öppna samma app på datorn och telefonen. Kameramaterialet överförs via en tillfällig, privat Cloudflare-session och analyseras stegvis.</p>
     </header>
 
     <section id="role-picker" class="panel">
@@ -23,67 +22,63 @@
       </div>
     </section>
 
-    <section id="pairing-panel" class="panel" hidden>
-      <h2>Parkoppling</h2>
+    <section id="connection-screen" class="panel" hidden>
+      <h2>Anslut telefon</h2>
       <p id="pairing-help"></p>
       <div id="qr-code" class="qr-code"></div>
-      <label id="peer-label" for="peer-code">Sessionskod</label>
-      <div class="peer-row">
-        <input id="peer-code" autocomplete="off" autocapitalize="none" spellcheck="false">
-        <button id="connect-peer">Anslut</button>
+      <div id="manual-connect">
+        <label id="peer-label" for="peer-code">Sessionskod</label>
+        <div class="peer-row">
+          <input id="peer-code" autocomplete="off" autocapitalize="none" spellcheck="false">
+          <button id="connect-peer">Anslut</button>
+        </div>
       </div>
       <p><strong>Status:</strong> <span id="connection-status">Inte ansluten</span></p>
     </section>
 
-    <section id="capture-panel" hidden>
-      <section class="camera-card">
-        <video id="camera" playsinline muted></video>
-        <canvas id="snapshot" hidden></canvas>
-        <div id="camera-placeholder">Kameran är inte startad</div>
+    <section id="work-screen" hidden>
+      <section class="work-toolbar panel">
+        <div>
+          <strong id="work-status">Ansluten</strong>
+          <span id="work-detail">Väntar på bildrutor</span>
+        </div>
+        <button id="show-pairing" class="secondary">Visa QR-kod</button>
       </section>
 
-      <section class="controls">
-        <button id="start-camera">Starta kamera</button>
-        <button id="capture" disabled>Ta bild</button>
-        <button id="new-pass" disabled>Ny rotation</button>
-        <button id="export" class="secondary" disabled>Exportera reservkopia</button>
-        <button id="reset" class="secondary">Nollställ</button>
+      <section id="capture-panel" hidden>
+        <section class="camera-card">
+          <video id="camera" playsinline muted></video>
+          <canvas id="snapshot" hidden></canvas>
+          <div id="camera-placeholder">Kameran är inte startad</div>
+        </section>
+        <section class="controls">
+          <button id="start-camera">Starta kamera</button>
+          <button id="capture" disabled>Ta bild</button>
+          <button id="new-pass" disabled>Ny rotation</button>
+          <button id="export" class="secondary" disabled>Exportera reservkopia</button>
+          <button id="reset" class="secondary">Rensa skanning</button>
+        </section>
+        <section class="settings-card">
+          <label for="scale-mm">Referenslängd i bilden, mm</label>
+          <input id="scale-mm" type="number" inputmode="decimal" min="1" step="1" placeholder="Exempel: 500">
+        </section>
       </section>
 
-      <section class="settings-card">
-        <label for="scale-mm">Referenslängd i bilden, mm</label>
-        <input id="scale-mm" type="number" inputmode="decimal" min="1" step="1" placeholder="Exempel: 500">
-        <p>Referensen används senare för absolut skala. T-markeringen anger märgpunkt och rotation.</p>
+      <section class="status-grid">
+        <article><span>Bildrutor</span><strong id="image-count">0</strong></article>
+        <article><span>Aktuell rotation</span><strong id="pass-count">1</strong></article>
+        <article><span>Analyserade</span><strong id="analysis-count">0</strong></article>
+        <article><span>Lagring</span><strong id="storage-status">Klar</strong></article>
       </section>
-    </section>
 
-    <section class="status-grid">
-      <article><span>Bildrutor</span><strong id="image-count">0</strong></article>
-      <article><span>Aktuell rotation</span><strong id="pass-count">1</strong></article>
-      <article><span>Djupkälla</span><strong id="depth-source">Endast RGB</strong></article>
-      <article><span>Lagring</span><strong id="storage-status">Startar</strong></article>
-    </section>
-
-    <section>
-      <h2>Analysunderlag</h2>
-      <p>Bildrutorna visas bara under prototypfasen. Varje inkommande bild kvalitetskontrolleras automatiskt.</p>
-      <div id="captures" class="captures"></div>
-    </section>
-
-    <section class="instructions">
-      <h2>Testupplägg</h2>
-      <ol>
-        <li>Öppna appen på datorn och välj Dator / livevy.</li>
-        <li>Skanna QR-koden med telefonen. Telefonen ansluter till samma molnsession.</li>
-        <li>Starta kameran och ta överlappande bildrutor längs pinnen.</li>
-        <li>Vrid pinnen 60–100° och välj Ny rotation.</li>
-        <li>Datorn visar materialet och markerar bildrutor som riskerar att vara oskarpa.</li>
-      </ol>
+      <section class="analysis-section">
+        <h2>Analysunderlag</h2>
+        <p>Bildrutorna visas bara under prototypfasen. Färgen visar aktuell skärpeklassning.</p>
+        <div id="captures" class="captures"></div>
+      </section>
     </section>
   </main>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   <script type="module" src="app.js"></script>
-  <script type="module" src="src/ui/connection-state.js"></script>
-  <script type="module" src="src/vision/live-analysis.js"></script>
 </body>
 </html>
