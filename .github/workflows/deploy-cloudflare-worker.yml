@@ -21,12 +21,19 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: '22'
-      - run: npm install
+          node-version: '24'
+      - name: Install dependencies
+        run: npm install
       - name: Ensure R2 bucket exists
-        run: npx wrangler r2 bucket create timber-scanner-scans || true
+        shell: bash
+        run: |
+          if npx wrangler r2 bucket list | grep -q 'timber-scanner-scans'; then
+            echo 'R2 bucket already exists.'
+          else
+            npx wrangler r2 bucket create timber-scanner-scans
+          fi
       - name: Deploy Worker
         run: npx wrangler deploy
