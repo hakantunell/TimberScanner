@@ -5,6 +5,7 @@ on:
   push:
     branches: [main]
     paths:
+      - 'docs/**'
       - 'cloudflare/pages-test/**'
       - '.github/workflows/deploy-cloudflare-pages-test.yml'
 
@@ -38,5 +39,17 @@ jobs:
           else
             npx wrangler pages project create timber-scanner-pages-test --production-branch main
           fi
-      - name: Deploy Pages connectivity test
-        run: npx wrangler pages deploy cloudflare/pages-test --project-name timber-scanner-pages-test --branch main
+      - name: Prepare TimberScanner Pages copy
+        shell: bash
+        run: |
+          rm -rf cloudflare/pages-test/public
+          mkdir -p cloudflare/pages-test/public
+          cp -R docs/. cloudflare/pages-test/public/
+      - name: Deploy TimberScanner with Pages Functions
+        shell: bash
+        run: |
+          cd cloudflare/pages-test
+          npx wrangler pages deploy public \
+            --project-name timber-scanner-pages-test \
+            --branch main \
+            --commit-dirty=true
