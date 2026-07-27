@@ -1,0 +1,25 @@
+:root { font-family: system-ui, sans-serif; color: #172119; background: #eef2ed; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { width: min(920px, 100%); margin: 0 auto; padding: 20px; }
+header { margin-bottom: 18px; }
+h1 { margin: 0; font-size: clamp(2rem, 8vw, 4rem); }
+h2 { margin-top: 28px; }
+.eyebrow { text-transform: uppercase; letter-spacing: .12em; font-weight: 700; color: #41634a; }
+.camera-card { position: relative; overflow: hidden; min-height: 240px; border-radius: 18px; background: #101410; display: grid; place-items: center; }
+video { display: block; width: 100%; max-height: 65vh; object-fit: contain; }
+#camera-placeholder { position: absolute; color: #dce5dc; }
+.controls { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 14px 0; }
+button { min-height: 48px; border: 0; border-radius: 12px; padding: 10px 14px; font: inherit; font-weight: 700; background: #285f35; color: white; }
+button.secondary { background: #d9e2d9; color: #172119; }
+button:disabled { opacity: .45; }
+.status-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.status-grid article { padding: 14px; border-radius: 12px; background: white; }
+.status-grid span, .status-grid strong { display: block; }
+.status-grid strong { margin-top: 4px; font-size: 1.35rem; }
+.captures { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+figure { margin: 0; padding: 8px; border-radius: 10px; background: white; }
+figure img { display: block; width: 100%; border-radius: 6px; }
+figcaption { margin-top: 6px; font-size: .8rem; }
+.instructions { padding: 4px 18px 14px; border-radius: 14px; background: white; }
+@media (min-width: 700px) { .controls { grid-template-columns: repeat(4, 1fr); } }
