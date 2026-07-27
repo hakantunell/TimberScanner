@@ -1,10 +1,27 @@
 const WORKER_ORIGIN = 'https://timber-scanner-api.hakan-tunell.workers.dev';
 
+function translatePublicPath(suffix) {
+  if (suffix === 'start') return '/sessions';
+  if (suffix === 'health') return '/health';
+
+  const parts = suffix.split('/').filter(Boolean);
+  if (parts[0] !== 'link' || !parts[1]) return `/${suffix}`;
+
+  const sessionId = encodeURIComponent(parts[1]);
+  if (parts.length === 2) return `/sessions/${sessionId}`;
+  if (parts[2] === 'frames' && parts.length === 3) return `/sessions/${sessionId}/images`;
+  if (parts[2] === 'frames' && parts[3]) {
+    return `/sessions/${sessionId}/images/${encodeURIComponent(parts[3])}`;
+  }
+
+  return `/${suffix}`;
+}
+
 export async function onRequest(context) {
   const incomingUrl = new URL(context.request.url);
   const path = context.params.path;
   const suffix = Array.isArray(path) ? path.join('/') : (path ?? '');
-  const targetUrl = new URL(`/${suffix}`, WORKER_ORIGIN);
+  const targetUrl = new URL(translatePublicPath(suffix), WORKER_ORIGIN);
   targetUrl.search = incomingUrl.search;
 
   const headers = new Headers(context.request.headers);
