@@ -8,25 +8,14 @@ function defaultApiBase() {
 
 async function parseResponse(response) {
   if (response.status === 204) return null;
-
   const rawBody = await response.text();
   let details = null;
-
   if (rawBody) {
-    try {
-      details = JSON.parse(rawBody);
-    } catch {
-      details = { error: rawBody };
-    }
+    try { details = JSON.parse(rawBody); }
+    catch { details = { error: rawBody }; }
   }
-
   if (response.ok) return details;
-
-  const message = details?.error
-    ?? details?.message
-    ?? rawBody
-    ?? `HTTP ${response.status}`;
-  throw new Error(message);
+  throw new Error(details?.error ?? details?.message ?? rawBody ?? `HTTP ${response.status}`);
 }
 
 export class CloudRelay {
@@ -46,6 +35,26 @@ export class CloudRelay {
     }));
   }
 
+  async markConnected(remoteSession) {
+    return parseResponse(await fetch(
+      `${this.apiBase}/link/${encodeURIComponent(remoteSession.sessionId)}/ready`,
+      {
+        method: 'POST',
+        headers: { 'x-upload-token': remoteSession.uploadToken },
+      },
+    ));
+  }
+
+  async clearImages(remoteSession) {
+    const headers = {};
+    if (remoteSession.viewToken) headers['x-view-token'] = remoteSession.viewToken;
+    else headers['x-upload-token'] = remoteSession.uploadToken;
+    return parseResponse(await fetch(
+      `${this.apiBase}/link/${encodeURIComponent(remoteSession.sessionId)}/frames`,
+      { method: 'DELETE', headers },
+    ));
+  }
+
   async uploadCapture(remoteSession, capture) {
     const query = new URLSearchParams({
       pass: String(capture.pass),
@@ -53,7 +62,7 @@ export class CloudRelay {
       width: String(capture.width),
       height: String(capture.height),
     });
-    const response = await fetch(
+    return parseResponse(await fetch(
       `${this.apiBase}/link/${encodeURIComponent(remoteSession.sessionId)}/frames/${encodeURIComponent(capture.id)}?${query}`,
       {
         method: 'PUT',
@@ -63,42 +72,30 @@ export class CloudRelay {
         },
         body: capture.blob,
       },
-    );
-    return parseResponse(response);
+    ));
   }
 
   async listImages(remoteSession) {
-    const response = await fetch(
+    return parseResponse(await fetch(
       `${this.apiBase}/link/${encodeURIComponent(remoteSession.sessionId)}/frames`,
-      {
-        headers: { 'x-view-token': remoteSession.viewToken },
-        cache: 'no-store',
-      },
-    );
-    return parseResponse(response);
+      { headers: { 'x-view-token': remoteSession.viewToken }, cache: 'no-store' },
+    ));
   }
 
   async downloadImage(remoteSession, imageId) {
     const response = await fetch(
       `${this.apiBase}/link/${encodeURIComponent(remoteSession.sessionId)}/frames/${encodeURIComponent(imageId)}`,
-      {
-        headers: { 'x-view-token': remoteSession.viewToken },
-        cache: 'no-store',
-      },
+      { headers: { 'x-view-token': remoteSession.viewToken }, cache: 'no-store' },
     );
     if (!response.ok) throw new Error(`Kunde inte hämta bild: HTTP ${response.status}`);
     return response.blob();
   }
 
   async deleteSession(remoteSession) {
-    const response = await fetch(
+    return parseResponse(await fetch(
       `${this.apiBase}/link/${encodeURIComponent(remoteSession.sessionId)}`,
-      {
-        method: 'DELETE',
-        headers: { 'x-view-token': remoteSession.viewToken },
-      },
-    );
-    return parseResponse(response);
+      { method: 'DELETE', headers: { 'x-view-token': remoteSession.viewToken } },
+    ));
   }
 }
 
