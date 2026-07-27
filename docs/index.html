@@ -12,27 +12,49 @@
     <header>
       <p class="eyebrow">Mobil prototyp</p>
       <h1>TimberScanner</h1>
-      <p>Fotografera en provpinne i flera rotationslägen. Bilderna sparas lokalt i telefonen.</p>
+      <p>Öppna samma app på datorn och telefonen. Datorn visar en QR-kod och telefonen skickar bilder direkt via WebRTC.</p>
     </header>
 
-    <section class="camera-card">
-      <video id="camera" playsinline muted></video>
-      <canvas id="snapshot" hidden></canvas>
-      <div id="camera-placeholder">Kameran är inte startad</div>
+    <section id="role-picker" class="panel">
+      <h2>Välj läge</h2>
+      <div class="role-grid">
+        <button id="viewer-mode">Dator / visa bilder</button>
+        <button id="capture-mode">Telefon / fotografera</button>
+      </div>
     </section>
 
-    <section class="controls">
-      <button id="start-camera">Starta kamera</button>
-      <button id="capture" disabled>Ta bild</button>
-      <button id="new-pass" disabled>Ny rotation</button>
-      <button id="export" class="secondary" disabled>Exportera</button>
-      <button id="reset" class="secondary">Nollställ</button>
+    <section id="pairing-panel" class="panel" hidden>
+      <h2>Parkoppling</h2>
+      <p id="pairing-help"></p>
+      <div id="qr-code" class="qr-code"></div>
+      <label id="peer-label" for="peer-code">Parkopplingskod</label>
+      <div class="peer-row">
+        <input id="peer-code" autocomplete="off" autocapitalize="none" spellcheck="false">
+        <button id="connect-peer">Anslut</button>
+      </div>
+      <p><strong>Status:</strong> <span id="connection-status">Inte ansluten</span></p>
     </section>
 
-    <section class="settings-card">
-      <label for="scale-mm">Referenslängd i bilden, mm</label>
-      <input id="scale-mm" type="number" inputmode="decimal" min="1" step="1" placeholder="Exempel: 500">
-      <p>Referensen används senare för absolut skala. T-markeringen anger märgpunkt och rotation.</p>
+    <section id="capture-panel" hidden>
+      <section class="camera-card">
+        <video id="camera" playsinline muted></video>
+        <canvas id="snapshot" hidden></canvas>
+        <div id="camera-placeholder">Kameran är inte startad</div>
+      </section>
+
+      <section class="controls">
+        <button id="start-camera">Starta kamera</button>
+        <button id="capture" disabled>Ta bild</button>
+        <button id="new-pass" disabled>Ny rotation</button>
+        <button id="export" class="secondary" disabled>Exportera</button>
+        <button id="reset" class="secondary">Nollställ</button>
+      </section>
+
+      <section class="settings-card">
+        <label for="scale-mm">Referenslängd i bilden, mm</label>
+        <input id="scale-mm" type="number" inputmode="decimal" min="1" step="1" placeholder="Exempel: 500">
+        <p>Referensen används senare för absolut skala. T-markeringen anger märgpunkt och rotation.</p>
+      </section>
     </section>
 
     <section class="status-grid">
@@ -50,14 +72,16 @@
     <section class="instructions">
       <h2>Testupplägg</h2>
       <ol>
+        <li>Öppna appen på datorn och välj Dator / visa bilder.</li>
+        <li>Skanna QR-koden med telefonen och starta kameran.</li>
         <li>Markera märgen och riktningen med ett tydligt T i båda ändar.</li>
         <li>Lägg en styv skala med känd längd bredvid pinnen.</li>
-        <li>Ta överlappande bilder längs pinnen och få med minst en ändmarkering.</li>
-        <li>Vrid pinnen 60–100° och tryck på Ny rotation.</li>
-        <li>Fortsätt tills alla sidor är fotograferade och exportera sessionen.</li>
+        <li>Ta överlappande bilder, vrid pinnen 60–100° och välj Ny rotation.</li>
       </ol>
     </section>
   </main>
+  <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>
