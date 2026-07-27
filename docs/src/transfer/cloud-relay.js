@@ -1,7 +1,9 @@
-const WORKER_API_BASE = 'https://timber-scanner-api.hakan-tunell.workers.dev';
+const LOCAL_API_BASE = 'http://localhost:8787';
 
 function defaultApiBase() {
-  return window.location.hostname.endsWith('.pages.dev') ? '/timber-sync' : WORKER_API_BASE;
+  const hostname = window.location.hostname;
+  const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
+  return isLocal ? LOCAL_API_BASE : '/timber-sync';
 }
 
 async function parseResponse(response) {
@@ -100,4 +102,4 @@ export class CloudRelay {
   }
 }
 
-export { WORKER_API_BASE, defaultApiBase };
+export { LOCAL_API_BASE, defaultApiBase };
