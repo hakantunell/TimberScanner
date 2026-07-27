@@ -7,7 +7,7 @@ import {
   setScaleReference,
 } from './src/scanning/scan-session.js';
 import { deleteSession, loadSession, saveSession } from './src/storage/session-store.js';
-import { PeerTransfer } from './src/transfer/peer-transfer.js';
+import { CloudRelay } from './src/transfer/cloud-relay.js';
 
 const video = document.querySelector('#camera');
 const canvas = document.querySelector('#snapshot');
@@ -29,20 +29,19 @@ const captureModeButton = document.querySelector('#capture-mode');
 const pairingPanel = document.querySelector('#pairing-panel');
 const pairingHelp = document.querySelector('#pairing-help');
 const qrCode = document.querySelector('#qr-code');
-const peerCode = document.querySelector('#peer-code');
-const peerLabel = document.querySelector('#peer-label');
-const connectPeerButton = document.querySelector('#connect-peer');
+const sessionCode = document.querySelector('#peer-code');
+const sessionLabel = document.querySelector('#peer-label');
+const connectButton = document.querySelector('#connect-peer');
 const connectionStatus = document.querySelector('#connection-status');
 const capturePanel = document.querySelector('#capture-panel');
 
+const relay = new CloudRelay();
+const previewUrls = new Set();
 let session = createSession();
 let stream = null;
 let mode = null;
-const previewUrls = new Set();
-const transfer = new PeerTransfer({
-  onStatus: (status) => { connectionStatus.textContent = status; },
-  onCapture: (remoteCapture) => receiveRemoteCapture(remoteCapture).catch(console.error),
-});
+let remoteSession = null;
+let pollTimer = null;
 
 function refreshStatus() {
   imageCount.textContent = String(session.images.length);
@@ -114,11 +113,6 @@ function blobToDataUrl(blob) {
   });
 }
 
-async function dataUrlToBlob(dataUrl) {
-  const response = await fetch(dataUrl);
-  return response.blob();
-}
-
 async function captureImage() {
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
@@ -137,46 +131,71 @@ async function captureImage() {
   renderCaptures();
   refreshStatus();
 
-  if (transfer.isConnected()) {
-    connectionStatus.textContent = 'Skickar bild';
-    transfer.sendCapture({
-      id: capture.id,
-      pass: capture.pass,
-      width: capture.width,
-      height: capture.height,
-      capturedAt: capture.capturedAt,
-      imageDataUrl: await blobToDataUrl(blob),
-    });
-    connectionStatus.textContent = 'Ansluten';
+  if (mode === 'capture' && remoteSession?.uploadToken) {
+    connectionStatus.textContent = 'Laddar upp bild';
+    try {
+      await relay.uploadCapture(remoteSession, capture);
+      connectionStatus.textContent = 'Bild uppladdad';
+    } catch (error) {
+      connectionStatus.textContent = `Uppladdning misslyckades: ${error.message}`;
+      console.error(error);
+    }
   }
 }
 
-async function receiveRemoteCapture(remote) {
-  if (!remote?.imageDataUrl) return;
-  const blob = await dataUrlToBlob(remote.imageDataUrl);
-  const capture = {
-    id: remote.id,
-    pass: remote.pass,
-    width: remote.width,
-    height: remote.height,
-    capturedAt: remote.capturedAt,
-    markerObservations: [],
-    depthFrame: null,
-    blob,
+async function receiveCloudImages() {
+  if (!remoteSession?.viewToken) return;
+  const result = await relay.listImages(remoteSession);
+  const missing = result.images.filter((image) => !session.images.some((item) => item.id === image.id));
+
+  for (const imageInfo of missing) {
+    const blob = await relay.downloadImage(remoteSession, imageInfo.id);
+    const metadata = imageInfo.metadata ?? {};
+    const capture = {
+      id: imageInfo.id,
+      pass: Number(metadata.pass) || 1,
+      width: Number(metadata.width) || 0,
+      height: Number(metadata.height) || 0,
+      capturedAt: metadata.capturedAt ?? imageInfo.uploadedAt,
+      markerObservations: [],
+      depthFrame: null,
+      blob,
+    };
+    session = addCapture(session, capture);
+    session = { ...session, currentPass: Math.max(session.currentPass, capture.pass) };
+  }
+
+  if (missing.length) {
+    await persistSession();
+    renderCaptures();
+    refreshStatus();
+  }
+  connectionStatus.textContent = `Ansluten · ${result.images.length} bilder i molnet`;
+}
+
+function startPolling() {
+  stopPolling();
+  const poll = async () => {
+    try {
+      await receiveCloudImages();
+    } catch (error) {
+      connectionStatus.textContent = `Synkfel: ${error.message}`;
+      console.error(error);
+    }
   };
-  if (session.images.some((item) => item.id === capture.id)) return;
-  session = addCapture(session, capture);
-  session = { ...session, currentPass: Math.max(session.currentPass, capture.pass) };
-  await persistSession();
-  renderCaptures();
-  refreshStatus();
+  poll();
+  pollTimer = window.setInterval(poll, 2000);
+}
+
+function stopPolling() {
+  if (pollTimer) window.clearInterval(pollTimer);
+  pollTimer = null;
 }
 
 async function startNewPass() {
   session = nextPass(session);
   await persistSession();
   refreshStatus();
-  transfer.sendState({ currentPass: session.currentPass });
 }
 
 async function exportSession() {
@@ -197,7 +216,7 @@ async function exportSession() {
 }
 
 async function resetSession() {
-  if (!confirm('Ta bort alla bilder i den aktiva skanningen?')) return;
+  if (!confirm('Ta bort alla lokala bilder i den aktiva skanningen?')) return;
   await deleteSession(ACTIVE_SESSION_ID);
   session = createSession();
   scaleInput.value = '';
@@ -214,33 +233,64 @@ function showMode(selectedMode) {
   qrCode.replaceChildren();
 }
 
+function encodeCaptureCode(value) {
+  return `${value.sessionId}.${value.uploadToken}`;
+}
+
+function decodeCaptureCode(code) {
+  const separator = code.indexOf('.');
+  if (separator < 1) throw new Error('Ogiltig sessionskod');
+  return {
+    sessionId: code.slice(0, separator),
+    uploadToken: code.slice(separator + 1),
+  };
+}
+
 async function startViewerMode() {
   showMode('viewer');
-  pairingHelp.textContent = 'Skanna QR-koden med telefonens kamera. Bilderna visas här när de tas.';
-  peerLabel.hidden = true;
-  peerCode.hidden = true;
-  connectPeerButton.hidden = true;
-  const id = await transfer.startViewer();
+  sessionLabel.hidden = true;
+  sessionCode.hidden = true;
+  connectButton.hidden = true;
+  pairingHelp.textContent = 'Skapar en privat session i Cloudflare…';
+  connectionStatus.textContent = 'Kontrollerar backend';
+
+  await relay.health();
+  remoteSession = await relay.createSession();
+  sessionStorage.setItem('timber-view-session', JSON.stringify(remoteSession));
+
   const url = new URL(window.location.href);
   url.search = '';
   url.searchParams.set('mode', 'capture');
-  url.searchParams.set('peer', id);
+  url.searchParams.set('session', remoteSession.sessionId);
+  url.searchParams.set('uploadToken', remoteSession.uploadToken);
   new window.QRCode(qrCode, { text: url.toString(), width: 220, height: 220 });
+
   const code = document.createElement('code');
-  code.textContent = id;
+  code.textContent = encodeCaptureCode(remoteSession);
   qrCode.append(code);
+  pairingHelp.textContent = `Skanna QR-koden. Sessionen raderas automatiskt ${new Date(remoteSession.expiresAt).toLocaleString('sv-SE')}.`;
+  startPolling();
 }
 
-async function startCaptureMode(viewerId = '') {
+async function startCaptureMode(cloudSession = null) {
   showMode('capture');
-  pairingHelp.textContent = viewerId
-    ? 'Ansluter automatiskt till datorn.'
-    : 'Skriv parkopplingskoden från datorn eller öppna QR-länken.';
-  peerLabel.hidden = false;
-  peerCode.hidden = false;
-  connectPeerButton.hidden = false;
-  peerCode.value = viewerId;
-  if (viewerId) await transfer.connectToViewer(viewerId);
+  sessionLabel.hidden = false;
+  sessionCode.hidden = false;
+  connectButton.hidden = false;
+  pairingHelp.textContent = cloudSession
+    ? 'Telefonen är kopplad till molnsessionen. Starta kameran.'
+    : 'Skanna QR-koden från datorn eller skriv sessionskoden manuellt.';
+
+  if (cloudSession) {
+    remoteSession = cloudSession;
+    sessionCode.value = encodeCaptureCode(cloudSession);
+    connectionStatus.textContent = 'Klar för uppladdning';
+  }
+}
+
+async function connectCaptureCode() {
+  remoteSession = decodeCaptureCode(sessionCode.value.trim());
+  connectionStatus.textContent = 'Klar för uppladdning';
 }
 
 async function initialise() {
@@ -253,17 +303,25 @@ async function initialise() {
 
     const params = new URLSearchParams(window.location.search);
     if (params.get('mode') === 'capture') {
-      await startCaptureMode(params.get('peer') ?? '');
+      const sessionId = params.get('session');
+      const uploadToken = params.get('uploadToken');
+      await startCaptureMode(sessionId && uploadToken ? { sessionId, uploadToken } : null);
     }
   } catch (error) {
     storageStatus.textContent = 'Startfel';
+    connectionStatus.textContent = error.message;
     console.error(error);
   }
 }
 
-viewerModeButton.addEventListener('click', () => startViewerMode().catch(console.error));
+viewerModeButton.addEventListener('click', () => startViewerMode().catch((error) => {
+  connectionStatus.textContent = `Kunde inte skapa session: ${error.message}`;
+  console.error(error);
+}));
 captureModeButton.addEventListener('click', () => startCaptureMode().catch(console.error));
-connectPeerButton.addEventListener('click', () => transfer.connectToViewer(peerCode.value.trim()).catch(console.error));
+connectButton.addEventListener('click', () => connectCaptureCode().catch((error) => {
+  connectionStatus.textContent = error.message;
+}));
 startButton.addEventListener('click', async () => {
   try {
     await startCamera();
@@ -285,7 +343,7 @@ scaleInput.addEventListener('change', async () => {
 
 window.addEventListener('pagehide', () => {
   stream?.getTracks().forEach((track) => track.stop());
-  transfer.dispose();
+  stopPolling();
   clearPreviewUrls();
 });
 
