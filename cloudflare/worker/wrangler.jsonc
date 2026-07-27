@@ -3,14 +3,29 @@
   "name": "timber-scanner-api",
   "main": "src/index.js",
   "compatibility_date": "2026-07-27",
+  "workers_dev": true,
   "r2_buckets": [
     {
       "binding": "SCANS",
       "bucket_name": "timber-scanner-scans"
     }
   ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "SCAN_SESSIONS",
+        "class_name": "ScanSession"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["ScanSession"]
+    }
+  ],
   "triggers": {
-    "crons": ["17 * * * *"]
+    "crons": ["0 * * * *"]
   },
   "vars": {
     "ALLOWED_ORIGIN": "https://hakantunell.github.io",
