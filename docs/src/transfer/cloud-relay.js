@@ -1,4 +1,8 @@
-const DEFAULT_API_BASE = 'https://timber-scanner-api.hakan-tunell.workers.dev';
+const WORKER_API_BASE = 'https://timber-scanner-api.hakan-tunell.workers.dev';
+
+function defaultApiBase() {
+  return window.location.hostname.endsWith('.pages.dev') ? '/api' : WORKER_API_BASE;
+}
 
 async function parseResponse(response) {
   if (response.ok) {
@@ -16,7 +20,7 @@ async function parseResponse(response) {
 }
 
 export class CloudRelay {
-  constructor({ apiBase = DEFAULT_API_BASE } = {}) {
+  constructor({ apiBase = defaultApiBase() } = {}) {
     this.apiBase = apiBase.replace(/\/$/, '');
   }
 
@@ -88,4 +92,4 @@ export class CloudRelay {
   }
 }
 
-export { DEFAULT_API_BASE };
+export { WORKER_API_BASE, defaultApiBase };
