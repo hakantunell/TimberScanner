@@ -5,18 +5,26 @@ function defaultApiBase() {
 }
 
 async function parseResponse(response) {
-  if (response.ok) {
-    if (response.status === 204) return null;
-    return response.json();
+  if (response.status === 204) return null;
+
+  const rawBody = await response.text();
+  let details = null;
+
+  if (rawBody) {
+    try {
+      details = JSON.parse(rawBody);
+    } catch {
+      details = { error: rawBody };
+    }
   }
 
-  let details;
-  try {
-    details = await response.json();
-  } catch {
-    details = { error: await response.text() };
-  }
-  throw new Error(details.error ?? `HTTP ${response.status}`);
+  if (response.ok) return details;
+
+  const message = details?.error
+    ?? details?.message
+    ?? rawBody
+    ?? `HTTP ${response.status}`;
+  throw new Error(message);
 }
 
 export class CloudRelay {
