@@ -39,7 +39,7 @@ export class CloudRelay {
   }
 
   async createSession() {
-    return parseResponse(await fetch(`${this.apiBase}/sessions`, {
+    return parseResponse(await fetch(`${this.apiBase}/start`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: '{}',
@@ -54,7 +54,7 @@ export class CloudRelay {
       height: String(capture.height),
     });
     const response = await fetch(
-      `${this.apiBase}/sessions/${encodeURIComponent(remoteSession.sessionId)}/images/${encodeURIComponent(capture.id)}?${query}`,
+      `${this.apiBase}/link/${encodeURIComponent(remoteSession.sessionId)}/frames/${encodeURIComponent(capture.id)}?${query}`,
       {
         method: 'PUT',
         headers: {
@@ -69,7 +69,7 @@ export class CloudRelay {
 
   async listImages(remoteSession) {
     const response = await fetch(
-      `${this.apiBase}/sessions/${encodeURIComponent(remoteSession.sessionId)}/images`,
+      `${this.apiBase}/link/${encodeURIComponent(remoteSession.sessionId)}/frames`,
       {
         headers: { 'x-view-token': remoteSession.viewToken },
         cache: 'no-store',
@@ -80,7 +80,7 @@ export class CloudRelay {
 
   async downloadImage(remoteSession, imageId) {
     const response = await fetch(
-      `${this.apiBase}/sessions/${encodeURIComponent(remoteSession.sessionId)}/images/${encodeURIComponent(imageId)}`,
+      `${this.apiBase}/link/${encodeURIComponent(remoteSession.sessionId)}/frames/${encodeURIComponent(imageId)}`,
       {
         headers: { 'x-view-token': remoteSession.viewToken },
         cache: 'no-store',
@@ -92,7 +92,7 @@ export class CloudRelay {
 
   async deleteSession(remoteSession) {
     const response = await fetch(
-      `${this.apiBase}/sessions/${encodeURIComponent(remoteSession.sessionId)}`,
+      `${this.apiBase}/link/${encodeURIComponent(remoteSession.sessionId)}`,
       {
         method: 'DELETE',
         headers: { 'x-view-token': remoteSession.viewToken },
