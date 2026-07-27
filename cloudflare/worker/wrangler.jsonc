@@ -9,7 +9,11 @@
       "bucket_name": "timber-scanner-scans"
     }
   ],
+  "triggers": {
+    "crons": ["17 * * * *"]
+  },
   "vars": {
-    "ALLOWED_ORIGIN": "https://hakantunell.github.io"
+    "ALLOWED_ORIGIN": "https://hakantunell.github.io",
+    "RETENTION_HOURS": "24"
   }
 }
