@@ -1,4 +1,8 @@
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
+const SESSION_PREFIX = 'sessions/';
+const SESSION_FILE = 'session.json';
+const DEFAULT_RETENTION_HOURS = 24;
+const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 
 function corsHeaders(origin, allowedOrigin) {
   const allowed = !allowedOrigin || origin === allowedOrigin || origin?.startsWith(`${allowedOrigin}/`);
@@ -11,7 +15,7 @@ function corsHeaders(origin, allowedOrigin) {
   };
 }
 
-function json(data, status, cors) {
+function json(data, status, cors = {}) {
   return new Response(JSON.stringify(data), {
     status,
     headers: { ...JSON_HEADERS, ...cors },
@@ -27,12 +31,17 @@ function randomToken(bytes = 18) {
     .replaceAll('=', '');
 }
 
+function retentionHours(env) {
+  const configured = Number(env.RETENTION_HOURS);
+  return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_RETENTION_HOURS;
+}
+
 function sessionKey(sessionId) {
-  return `sessions/${sessionId}/session.json`;
+  return `${SESSION_PREFIX}${sessionId}/${SESSION_FILE}`;
 }
 
 function imagePrefix(sessionId) {
-  return `sessions/${sessionId}/images/`;
+  return `${SESSION_PREFIX}${sessionId}/images/`;
 }
 
 async function readSession(env, sessionId) {
@@ -43,15 +52,18 @@ async function readSession(env, sessionId) {
 
 async function createSession(env) {
   const sessionId = randomToken(8);
+  const createdAt = new Date();
+  const expiresAt = new Date(createdAt.getTime() + retentionHours(env) * 60 * 60 * 1000);
   const session = {
     sessionId,
     uploadToken: randomToken(),
     viewToken: randomToken(),
-    createdAt: new Date().toISOString(),
-    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    createdAt: createdAt.toISOString(),
+    expiresAt: expiresAt.toISOString(),
   };
   await env.SCANS.put(sessionKey(sessionId), JSON.stringify(session), {
     httpMetadata: { contentType: 'application/json' },
+    customMetadata: { kind: 'session', expiresAt: session.expiresAt },
   });
   return session;
 }
@@ -75,20 +87,71 @@ async function listImages(env, sessionId) {
 
 async function deleteSession(env, sessionId) {
   let cursor;
+  let deletedObjects = 0;
   do {
-    const page = await env.SCANS.list({ prefix: `sessions/${sessionId}/`, cursor });
-    if (page.objects.length) await env.SCANS.delete(page.objects.map((object) => object.key));
+    const page = await env.SCANS.list({ prefix: `${SESSION_PREFIX}${sessionId}/`, cursor });
+    if (page.objects.length) {
+      await env.SCANS.delete(page.objects.map((object) => object.key));
+      deletedObjects += page.objects.length;
+    }
     cursor = page.truncated ? page.cursor : undefined;
   } while (cursor);
+  return deletedObjects;
+}
+
+async function cleanupExpiredSessions(env) {
+  let cursor;
+  let scannedSessions = 0;
+  let deletedSessions = 0;
+  let deletedObjects = 0;
+  const now = Date.now();
+
+  do {
+    const page = await env.SCANS.list({ prefix: SESSION_PREFIX, cursor, include: ['customMetadata'] });
+    for (const object of page.objects) {
+      if (!object.key.endsWith(`/${SESSION_FILE}`)) continue;
+      scannedSessions += 1;
+
+      let expiresAt = object.customMetadata?.expiresAt;
+      let sessionId = object.key.slice(SESSION_PREFIX.length, -(`/${SESSION_FILE}`.length));
+      if (!expiresAt) {
+        const session = await readSession(env, sessionId);
+        expiresAt = session?.expiresAt;
+      }
+
+      if (expiresAt && new Date(expiresAt).getTime() <= now) {
+        deletedObjects += await deleteSession(env, sessionId);
+        deletedSessions += 1;
+      }
+    }
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+
+  return { scannedSessions, deletedSessions, deletedObjects };
+}
+
+function validateConfiguration(env) {
+  const missing = [];
+  if (!env.SCANS) missing.push('R2 binding SCANS');
+  return {
+    ok: missing.length === 0,
+    missing,
+    retentionHours: retentionHours(env),
+    maxImageBytes: MAX_IMAGE_BYTES,
+  };
 }
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const cors = corsHeaders(request.headers.get('origin'), env.ALLOWED_ORIGIN);
+    const configuration = validateConfiguration(env);
 
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
-    if (url.pathname === '/health') return json({ status: 'ok' }, 200, cors);
+    if (url.pathname === '/health') {
+      return json({ status: configuration.ok ? 'ok' : 'configuration_error', ...configuration }, configuration.ok ? 200 : 503, cors);
+    }
+    if (!configuration.ok) return json({ error: 'Worker configuration is incomplete', ...configuration }, 503, cors);
 
     if (request.method === 'POST' && url.pathname === '/sessions') {
       const session = await createSession(env);
@@ -109,12 +172,17 @@ export default {
 
     if (request.method === 'GET' && tail === 'images') {
       if (!authorized(request, session, 'view')) return json({ error: 'Unauthorized' }, 401, cors);
-      return json({ sessionId, images: await listImages(env, sessionId) }, 200, cors);
+      return json({ sessionId, expiresAt: session.expiresAt, images: await listImages(env, sessionId) }, 200, cors);
     }
 
     const imageMatch = tail.match(/^images\/([^/]+)$/);
     if (imageMatch && request.method === 'PUT') {
       if (!authorized(request, session, 'upload')) return json({ error: 'Unauthorized' }, 401, cors);
+      const contentLength = Number(request.headers.get('content-length'));
+      if (Number.isFinite(contentLength) && contentLength > MAX_IMAGE_BYTES) {
+        return json({ error: 'Image too large', maxBytes: MAX_IMAGE_BYTES }, 413, cors);
+      }
+
       const imageId = imageMatch[1];
       const contentType = request.headers.get('content-type') ?? 'image/jpeg';
       const pass = url.searchParams.get('pass') ?? '1';
@@ -144,5 +212,9 @@ export default {
     }
 
     return json({ error: 'Not found' }, 404, cors);
+  },
+
+  async scheduled(_event, env, ctx) {
+    ctx.waitUntil(cleanupExpiredSessions(env));
   },
 };
