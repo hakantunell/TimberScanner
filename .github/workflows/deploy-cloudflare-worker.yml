@@ -22,18 +22,53 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - uses: actions/checkout@v5
+
       - uses: actions/setup-node@v5
         with:
           node-version: '24'
-      - name: Install dependencies
-        run: npm install
-      - name: Ensure R2 bucket exists
+
+      - name: Verify required secrets
         shell: bash
         run: |
-          if npx wrangler r2 bucket list | grep -q 'timber-scanner-scans'; then
-            echo 'R2 bucket already exists.'
-          else
-            npx wrangler r2 bucket create timber-scanner-scans
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "::error::GitHub secret CLOUDFLARE_API_TOKEN is missing or empty."
+            exit 1
           fi
+          if [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "::error::GitHub secret CLOUDFLARE_ACCOUNT_ID is missing or empty."
+            exit 1
+          fi
+          echo "Cloudflare secrets are present."
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Show Wrangler version
+        run: npx wrangler --version
+
+      - name: Verify Cloudflare authentication
+        shell: bash
+        run: |
+          set -o pipefail
+          npx wrangler whoami 2>&1 | tee /tmp/wrangler-whoami.log
+
+      - name: Provision R2 bucket before Worker deploy
+        shell: bash
+        run: |
+          set -o pipefail
+          echo "Listing R2 buckets..."
+          npx wrangler r2 bucket list 2>&1 | tee /tmp/r2-list.log
+
+          if grep -q 'timber-scanner-scans' /tmp/r2-list.log; then
+            echo "R2 bucket timber-scanner-scans already exists."
+          else
+            echo "Creating R2 bucket timber-scanner-scans..."
+            npx wrangler r2 bucket create timber-scanner-scans 2>&1 | tee /tmp/r2-create.log
+          fi
+
       - name: Deploy Worker
-        run: npx wrangler deploy
+        shell: bash
+        run: |
+          set -o pipefail
+          npx wrangler deploy 2>&1 | tee /tmp/wrangler-deploy.log
