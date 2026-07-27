@@ -11,35 +11,41 @@ import { CloudRelay } from './src/transfer/cloud-relay.js';
 import { analyseCanvasQuality, describeSharpness } from './src/vision/image-quality.js';
 
 const byId = (id) => document.querySelector(`#${id}`);
-const video = byId('camera');
-const canvas = byId('snapshot');
-const placeholder = byId('camera-placeholder');
-const captures = byId('captures');
-const startButton = byId('start-camera');
-const captureButton = byId('capture');
-const newPassButton = byId('new-pass');
-const exportButton = byId('export');
-const resetButton = byId('reset');
-const scaleInput = byId('scale-mm');
-const imageCount = byId('image-count');
-const passCount = byId('pass-count');
-const analysisCount = byId('analysis-count');
-const storageStatus = byId('storage-status');
-const rolePicker = byId('role-picker');
-const viewerModeButton = byId('viewer-mode');
-const captureModeButton = byId('capture-mode');
-const connectionScreen = byId('connection-screen');
-const workScreen = byId('work-screen');
-const capturePanel = byId('capture-panel');
-const pairingHelp = byId('pairing-help');
-const qrCode = byId('qr-code');
-const manualConnect = byId('manual-connect');
-const sessionCode = byId('peer-code');
-const connectButton = byId('connect-peer');
-const connectionStatus = byId('connection-status');
-const showPairingButton = byId('show-pairing');
-const workStatus = byId('work-status');
-const workDetail = byId('work-detail');
+const required = (id) => {
+  const element = byId(id);
+  if (!element) throw new Error(`Appens HTML saknar elementet #${id}. Ladda om sidan.`);
+  return element;
+};
+
+const video = required('camera');
+const canvas = required('snapshot');
+const placeholder = required('camera-placeholder');
+const captures = required('captures');
+const startButton = required('start-camera');
+const captureButton = required('capture');
+const newPassButton = required('new-pass');
+const exportButton = required('export');
+const resetButton = required('reset');
+const scaleInput = required('scale-mm');
+const imageCount = required('image-count');
+const passCount = required('pass-count');
+const analysisCount = required('analysis-count');
+const storageStatus = required('storage-status');
+const rolePicker = required('role-picker');
+const viewerModeButton = required('viewer-mode');
+const captureModeButton = required('capture-mode');
+const connectionScreen = required('connection-screen');
+const workScreen = required('work-screen');
+const capturePanel = required('capture-panel');
+const pairingHelp = required('pairing-help');
+const qrCode = required('qr-code');
+const manualConnect = required('manual-connect');
+const sessionCode = required('peer-code');
+const connectButton = required('connect-peer');
+const connectionStatus = required('connection-status');
+const showPairingButton = required('show-pairing');
+const workStatus = required('work-status');
+const workDetail = required('work-detail');
 
 const relay = new CloudRelay();
 const previewUrls = new Set();
@@ -51,23 +57,29 @@ let pollTimer = null;
 let pairingUrl = null;
 
 function showConnectionScreen() {
-  rolePicker.hidden = true;
   connectionScreen.hidden = false;
   workScreen.hidden = true;
+  rolePicker.hidden = true;
 }
 
 function showWorkScreen() {
-  rolePicker.hidden = true;
-  connectionScreen.hidden = true;
   workScreen.hidden = false;
+  connectionScreen.hidden = true;
+  rolePicker.hidden = true;
   capturePanel.hidden = mode !== 'capture';
+}
+
+function showRolePicker() {
+  rolePicker.hidden = false;
+  connectionScreen.hidden = true;
+  workScreen.hidden = true;
 }
 
 function refreshStatus() {
   imageCount.textContent = String(session.images.length);
   passCount.textContent = String(session.currentPass);
   analysisCount.textContent = String(session.images.filter((item) => item.quality).length);
-  if (exportButton) exportButton.disabled = session.images.length === 0;
+  exportButton.disabled = session.images.length === 0;
 }
 
 function clearPreviewUrls() {
@@ -239,7 +251,7 @@ async function exportSession() {
 async function clearLocalSession() {
   await deleteSession(ACTIVE_SESSION_ID);
   session = createSession();
-  if (scaleInput) scaleInput.value = '';
+  scaleInput.value = '';
   renderCaptures();
   refreshStatus();
   storageStatus.textContent = 'Ny skanning';
@@ -261,6 +273,7 @@ function decodeCaptureCode(code) {
 }
 
 function renderPairingCode() {
+  qrCode.hidden = false;
   qrCode.replaceChildren();
   if (!pairingUrl || !remoteSession) return;
   new window.QRCode(qrCode, { text: pairingUrl, width: 220, height: 220 });
@@ -272,6 +285,7 @@ function renderPairingCode() {
 async function startViewerMode() {
   mode = 'viewer';
   showConnectionScreen();
+  qrCode.hidden = false;
   manualConnect.hidden = true;
   pairingHelp.textContent = 'Skapar en privat session i Cloudflare…';
   connectionStatus.textContent = 'Kontrollerar backend';
@@ -294,7 +308,6 @@ async function startViewerMode() {
 async function startCaptureMode(cloudSession = null) {
   mode = 'capture';
   remoteSession = cloudSession;
-  capturePanel.hidden = false;
   if (cloudSession) {
     sessionCode.value = encodeCaptureCode(cloudSession);
     workStatus.textContent = 'Kopplad till datorn';
@@ -305,6 +318,7 @@ async function startCaptureMode(cloudSession = null) {
     manualConnect.hidden = false;
     qrCode.hidden = true;
     pairingHelp.textContent = 'Skriv sessionskoden från datorn.';
+    connectionStatus.textContent = 'Inte ansluten';
   }
 }
 
@@ -324,13 +338,21 @@ async function initialise() {
     const sessionId = params.get('session');
     const uploadToken = params.get('uploadToken');
     await startCaptureMode(sessionId && uploadToken ? { sessionId, uploadToken } : null);
+  } else {
+    showRolePicker();
   }
 }
 
 viewerModeButton.addEventListener('click', () => startViewerMode().catch((error) => {
+  showConnectionScreen();
   connectionStatus.textContent = `Kunde inte skapa session: ${error.message}`;
+  console.error(error);
 }));
-captureModeButton.addEventListener('click', () => startCaptureMode().catch(console.error));
+captureModeButton.addEventListener('click', () => startCaptureMode().catch((error) => {
+  showConnectionScreen();
+  connectionStatus.textContent = error.message;
+  console.error(error);
+}));
 connectButton.addEventListener('click', () => connectCaptureCode().catch((error) => { connectionStatus.textContent = error.message; }));
 showPairingButton.addEventListener('click', () => { renderPairingCode(); showConnectionScreen(); });
 startButton.addEventListener('click', () => startCamera().then(() => { startButton.disabled = true; }).catch((error) => {
@@ -351,4 +373,8 @@ window.addEventListener('pagehide', () => {
   clearPreviewUrls();
 });
 
-initialise().catch(console.error);
+initialise().catch((error) => {
+  console.error(error);
+  showRolePicker();
+  alert(`TimberScanner kunde inte starta: ${error.message}`);
+});
