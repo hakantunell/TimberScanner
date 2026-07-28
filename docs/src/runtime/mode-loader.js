@@ -1,4 +1,4 @@
-const VERSION = '20260728-20';
+const VERSION = '20260728-22';
 const params = new URLSearchParams(window.location.search);
 const captureMode = params.get('mode') === 'capture';
 
@@ -14,9 +14,10 @@ if (captureMode) {
   await load('../scanning/auto-capture.js');
 } else {
   // Viewer: skärpa -> urval -> foreground-mask -> OpenCV ORB/BFMatcher -> affin RANSAC i Web Worker.
-  // Pose, triangulering och punktmoln är fortsatt avstängda.
+  // Ny fysisk workerfil används för att kringgå gammal browser/CDN-cache.
   await load('../debug/viewer-trace.js');
   await load('../vision/analysis-pipeline.js');
+  await load('../vision/worker-cache-fix-v22.js');
   await load('../vision/sequential-feature-matching.js');
   await load('../vision/viewer-quality-queue.js');
 }
