@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#17351f">
   <title>TimberScanner</title>
-  <link rel="stylesheet" href="styles.css?v=20260728-2">
+  <link rel="stylesheet" href="styles.css?v=20260728-3">
   <script type="importmap">
     {
       "imports": {
-        "./src/transfer/cloud-relay.js": "./src/transfer/cloud-relay.js?v=20260728-2"
+        "./src/transfer/cloud-relay.js": "./src/transfer/cloud-relay.js?v=20260728-3"
       }
     }
   </script>
@@ -74,7 +74,7 @@
         </section>
 
         <section class="controls">
-          <button id="start-camera">Starta kamera</button>
+          <button id="start-camera" type="button" onclick="window.startTimberCamera && window.startTimberCamera()">Starta kamera</button>
           <button id="capture" disabled>Ta bild manuellt</button>
           <button id="new-pass" disabled>Ny rotation</button>
           <button id="export" class="secondary" disabled>Exportera reservkopia</button>
@@ -153,14 +153,14 @@
     </section>
   </main>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script type="module" src="src/debug/viewer-trace.js?v=20260728-2"></script>
-  <script type="module" src="src/capture/camera-controller.js?v=20260728-2"></script>
-  <script type="module" src="app.js?v=20260728-2"></script>
-  <script type="module" src="src/scanning/auto-capture.js?v=20260728-2"></script>
-  <script type="module" src="src/vision/sparse-reconstruction.js?v=20260728-2"></script>
-  <script type="module" src="src/vision/opencv-loader.js?v=20260728-2"></script>
-  <script type="module" src="src/vision/opencv-reconstruction.js?v=20260728-2"></script>
-  <script type="module" src="src/vision/feature-matching.js?v=20260728-2"></script>
-  <script type="module" src="src/vision/contour-diagnostics.js?v=20260728-2"></script>
+  <script type="module" src="src/debug/viewer-trace.js?v=20260728-3"></script>
+  <script type="module" src="src/capture/camera-controller.js?v=20260728-3"></script>
+  <script type="module" src="app.js?v=20260728-3"></script>
+  <script type="module" src="src/scanning/auto-capture.js?v=20260728-3"></script>
+  <script type="module" src="src/vision/sparse-reconstruction.js?v=20260728-3"></script>
+  <script type="module" src="src/vision/opencv-loader.js?v=20260728-3"></script>
+  <script type="module" src="src/vision/opencv-reconstruction.js?v=20260728-3"></script>
+  <script type="module" src="src/vision/feature-matching.js?v=20260728-3"></script>
+  <script type="module" src="src/vision/contour-diagnostics.js?v=20260728-3"></script>
 </body>
 </html>
