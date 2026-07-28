@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#17351f">
   <title>TimberScanner</title>
-  <link rel="stylesheet" href="styles.css?v=20260728-26">
+  <link rel="stylesheet" href="styles.css?v=20260728-27">
   <script type="importmap">
     {
       "imports": {
-        "./src/transfer/cloud-relay.js": "./src/transfer/cloud-relay.js?v=20260728-26"
+        "./src/transfer/cloud-relay.js": "./src/transfer/cloud-relay.js?v=20260728-27"
       }
     }
   </script>
@@ -17,15 +17,15 @@
 <body>
   <main>
     <header>
-      <p class="eyebrow">Lokal analysprototyp</p>
+      <p class="eyebrow">USB-prototyp</p>
       <h1>TimberScanner</h1>
     </header>
 
     <section id="role-picker" class="panel">
-      <h2>Välj kamerakälla</h2>
+      <h2>Kamerakälla</h2>
       <div class="role-grid">
         <button id="viewer-mode">USB-webbkamera</button>
-        <button id="capture-mode">Mobilkamera</button>
+        <button id="capture-mode">Mobilkamera (senare)</button>
       </div>
     </section>
 
@@ -47,13 +47,13 @@
     <section id="work-screen" hidden>
       <section class="work-toolbar panel">
         <div>
-          <strong id="work-status">USB-webbkamera</strong>
-          <span id="work-detail">Starta kameran</span>
+          <strong id="work-status">USB-kamera</strong>
+          <span id="work-detail">Starta kameran och ta bildrutor</span>
         </div>
-        <button id="show-pairing" class="secondary">Visa QR-kod</button>
+        <button id="show-pairing" class="secondary">Mobilkamera</button>
       </section>
 
-      <section id="capture-panel" hidden>
+      <section id="capture-panel">
         <section class="camera-card">
           <video id="camera" playsinline muted></video>
           <canvas id="snapshot" hidden></canvas>
@@ -90,7 +90,7 @@
         <article><span>Bildrutor</span><strong id="image-count">0</strong></article>
         <article><span>Aktuell rotation</span><strong id="pass-count">1</strong></article>
         <article><span>Analyserade</span><strong id="analysis-count">0</strong></article>
-        <article><span>Urval</span><strong id="storage-status">Lokalt</strong></article>
+        <article><span>Urval</span><strong id="storage-status">Klar</strong></article>
       </section>
 
       <section id="sparse-reconstruction" class="diagnostic-panel" hidden>
@@ -108,7 +108,7 @@
           <div><strong id="feature-match-status">Väntar på två valda bilder</strong><span id="feature-match-detail">Ingen jämförelse ännu</span></div>
         </div>
         <div class="diagnostic-canvas-wrap"><canvas id="feature-match-canvas"></canvas></div>
-        <p class="diagnostic-note">Gula linjer visar endast ömsesidiga ORB-matchningar som dessutom klarar affin RANSAC. En foreground-mask minskar bakgrundens inflytande.</p>
+        <p class="diagnostic-note">Gula linjer visar ömsesidiga ORB-matchningar som klarar geometrisk filtrering.</p>
       </section>
 
       <section id="contour-diagnostics" class="diagnostic-panel" hidden>
@@ -131,6 +131,6 @@
     </section>
   </main>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script type="module" src="src/runtime/mode-loader.js?v=20260728-26"></script>
+  <script type="module" src="src/runtime/mode-loader.js?v=20260728-27"></script>
 </body>
 </html>
