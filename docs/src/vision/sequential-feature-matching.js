@@ -10,11 +10,29 @@ const pending = new Map();
 let requestId = 0;
 let worker = null;
 let workerReady = false;
+let lastWorkerStage = 'workern har inte startat';
 
 function workerUrl() {
-  const url = new URL('./orb-worker.js', import.meta.url);
-  url.searchParams.set('v', '20260728-20');
-  return url;
+  return new URL('./orb-worker-v27.js?v=20260728-27', import.meta.url);
+}
+
+function stageText(message) {
+  const names = {
+    'opencv-fetch-start': 'Hämtar OpenCV-filen',
+    'opencv-fetch-response': `OpenCV svarade HTTP ${message.status ?? '?'} · ${message.contentLength || 'okänd storlek'}`,
+    'opencv-source-ready': `OpenCV-fil hämtad · ${Math.round((message.bytes ?? 0) / 1024)} kB`,
+    'opencv-evaluating': 'Läser in OpenCV-koden lokalt i workern',
+    'opencv-initializing': 'Initierar OpenCV/WASM',
+    'core-loading': 'Laddar ORB-kärnan',
+    'core-ready': 'ORB-kärnan är redo',
+    'opencv-loading': 'Laddar OpenCV',
+    'opencv-ready': 'OpenCV ORB är redo',
+    mask: 'Skapar stockmask',
+    orb: 'Beräknar ORB-nyckelpunkter och deskriptorer',
+    matching: `BFMatcher jämför ${message.keypointsA ?? 0}/${message.keypointsB ?? 0} ORB-punkter`,
+    ransac: `Affin RANSAC på ${message.rawMatches ?? 0} ömsesidiga matchningar`,
+  };
+  return names[message.stage ?? message.progress] ?? message.stage ?? message.progress ?? 'okänd workerfas';
 }
 
 function failPending(error) {
@@ -28,26 +46,37 @@ function failPending(error) {
 function ensureWorker() {
   if (worker) return worker;
   workerReady = false;
+  lastWorkerStage = 'startar worker v20260728-27';
   worker = new Worker(workerUrl(), { type: 'classic' });
   worker.addEventListener('message', (event) => {
     const message = event.data ?? {};
+    if (message.type === 'bootstrap') {
+      lastWorkerStage = stageText(message);
+      detail.textContent = `${lastWorkerStage} · worker ${message.version ?? ''}`;
+      if (message.stage === 'core-ready') workerReady = true;
+      return;
+    }
+    if (message.type === 'bootstrap-error') {
+      const error = new Error(`Workerstart misslyckades: ${message.error}`);
+      lastWorkerStage = error.message;
+      detail.textContent = error.message;
+      failPending(error);
+      worker?.terminate();
+      worker = null;
+      workerReady = false;
+      return;
+    }
     if (message.type === 'ready') {
       workerReady = true;
-      detail.textContent = `Worker redo · ${message.engine ?? 'bildmatchning'} · version ${message.version}`;
+      lastWorkerStage = `worker redo: ${message.engine ?? 'bildmatchning'}`;
+      detail.textContent = `${lastWorkerStage} · version ${message.version}`;
       return;
     }
     const entry = pending.get(message.id);
     if (!entry) return;
     if (message.progress) {
-      const names = {
-        'opencv-loading': 'Laddar OpenCV i workertråden första gången',
-        'opencv-ready': 'OpenCV ORB är redo',
-        mask: 'Skapar foreground-mask för stockområdet',
-        orb: 'Beräknar ORB-nyckelpunkter och deskriptorer',
-        matching: `BFMatcher jämför ${message.keypointsA ?? 0}/${message.keypointsB ?? 0} ORB-punkter`,
-        ransac: `Affin RANSAC på ${message.rawMatches ?? 0} ömsesidiga matchningar`,
-      };
-      detail.textContent = names[message.progress] ?? message.progress;
+      lastWorkerStage = stageText(message);
+      detail.textContent = lastWorkerStage;
       return;
     }
     pending.delete(message.id);
@@ -56,7 +85,7 @@ function ensureWorker() {
     else entry.reject(new Error(message.error || 'ORB-workern misslyckades'));
   });
   worker.addEventListener('error', (event) => {
-    const error = new Error(event.message || 'ORB-workern kraschade');
+    const error = new Error(`${event.message || 'ORB-workern kraschade'} · senaste fas: ${lastWorkerStage}`);
     failPending(error);
     worker.terminate();
     worker = null;
@@ -89,8 +118,8 @@ function requestMatch(left, right) {
       worker?.terminate();
       worker = null;
       workerReady = false;
-      reject(new Error('ORB-workern tog längre än 45 sekunder'));
-    }, 45000);
+      reject(new Error(`ORB-workern tog längre än 60 sekunder · senaste fas: ${lastWorkerStage}`));
+    }, 60000);
     pending.set(id, { resolve, reject, timeout });
     ensureWorker().postMessage({
       id,
@@ -134,15 +163,10 @@ async function matchPair(firstFigure, secondFigure) {
   if (!firstImage?.naturalWidth || !secondImage?.naturalWidth) throw new Error('Bildparet är inte färdigavkodat');
   const left = imageData(firstImage);
   const right = imageData(secondImage);
-  drawPair(left.canvas, right.canvas, [], 'Bildparet skickat till OpenCV ORB-worker');
+  drawPair(left.canvas, right.canvas, [], 'Bildparet skickat till ORB-worker v27');
   detail.textContent = `Skickar ${left.data.width}×${left.data.height} och ${right.data.width}×${right.data.height}`;
   const result = await requestMatch(left, right);
-  drawPair(
-    left.canvas,
-    right.canvas,
-    result.points,
-    `${result.matches}/${result.rawMatches} RANSAC-inliers · ${result.inlierRatio}% · OpenCV ORB`,
-  );
+  drawPair(left.canvas, right.canvas, result.points, `${result.matches}/${result.rawMatches} RANSAC-inliers · ${result.inlierRatio}% · OpenCV ORB`);
   return result;
 }
 
@@ -162,7 +186,7 @@ registerAnalysisStage({
       const pairId = `${first.dataset.captureId}|${second.dataset.captureId}`;
       if (processedPairs.has(pairId)) continue;
       status.textContent = `ORB-matchar valt bildpar ${index}/${figures.length - 1}…`;
-      detail.textContent = workerReady ? 'OpenCV-worker redo' : 'Startar OpenCV-worker…';
+      detail.textContent = workerReady ? 'OpenCV-worker redo' : 'Startar diagnostisk OpenCV-worker…';
       try {
         const result = await matchPair(first, second);
         processedPairs.add(pairId);
@@ -170,9 +194,7 @@ registerAnalysisStage({
         const stable = result.matches >= 12 && result.inlierRatio >= 35 && result.meanError <= 4;
         status.textContent = stable ? 'Geometriskt stabil ORB-matchning' : 'Geometriskt svag ORB-matchning';
         const motion = result.motion;
-        const motionText = motion
-          ? `rotation ${motion.rotation}° · skala ${motion.scale} · förskjutning ${motion.tx}, ${motion.ty} px`
-          : 'ingen stabil affin modell';
+        const motionText = motion ? `rotation ${motion.rotation}° · skala ${motion.scale} · förskjutning ${motion.tx}, ${motion.ty} px` : 'ingen stabil affin modell';
         detail.textContent = `${result.matches}/${result.rawMatches} inliers (${result.inlierRatio}%) · ${result.ratioMatches} ratio-matchningar · fel ${result.meanError}px · mask ${result.maskCoverageA}/${result.maskCoverageB}% · ${motionText}`;
         window.dispatchEvent(new CustomEvent('timberscanner:pair-matched', { detail: { pairId, ...result } }));
       } catch (error) {
