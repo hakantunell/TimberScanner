@@ -1,7 +1,7 @@
 const WORKER_ORIGIN = 'https://timber-scanner-api.hakan-tunell.workers.dev';
 
 function translatePublicPath(suffix) {
-  if (suffix === 'start') return '/sessions';
+  if (suffix === 'start' || suffix === 'open') return '/sessions';
   if (suffix === 'health') return '/health';
 
   const parts = suffix.split('/').filter(Boolean);
@@ -23,16 +23,20 @@ export async function onRequest(context) {
   const path = context.params.path;
   const suffix = Array.isArray(path) ? path.join('/') : (path ?? '');
   const targetUrl = new URL(translatePublicPath(suffix), WORKER_ORIGIN);
-  targetUrl.search = incomingUrl.search;
+
+  const createViaGet = suffix === 'open' && context.request.method === 'GET';
+  if (!createViaGet) targetUrl.search = incomingUrl.search;
 
   const headers = new Headers(context.request.headers);
   headers.delete('host');
   headers.delete('origin');
+  if (createViaGet) headers.set('content-type', 'application/json');
 
+  const upstreamMethod = createViaGet ? 'POST' : context.request.method;
   const upstreamRequest = new Request(targetUrl, {
-    method: context.request.method,
+    method: upstreamMethod,
     headers,
-    body: ['GET', 'HEAD'].includes(context.request.method) ? undefined : context.request.body,
+    body: createViaGet ? '{}' : (['GET', 'HEAD'].includes(context.request.method) ? undefined : context.request.body),
     redirect: 'manual',
   });
 
