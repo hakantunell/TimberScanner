@@ -75,9 +75,10 @@ async function requestCamera() {
   }));
 }
 
-async function activateCamera(source = 'program') {
+async function activateCamera(source = 'program', event = null) {
+  event?.preventDefault?.();
   const now = Date.now();
-  if (starting || now - lastActivationAt < 700) return;
+  if (starting || now - lastActivationAt < 500) return;
   lastActivationAt = now;
   starting = true;
 
@@ -99,7 +100,7 @@ async function activateCamera(source = 'program') {
   }
 }
 
-window.startTimberCamera = () => activateCamera('inline');
+window.startTimberCamera = () => activateCamera('global');
 window.TimberCamera = Object.freeze({
   start: () => activateCamera('api'),
   isReady: () => Boolean(video?.videoWidth && video?.videoHeight),
@@ -120,7 +121,11 @@ window.TimberCamera = Object.freeze({
 });
 
 if (startButton && video) {
-  setStatus(`Kameramodul v20260728-3 redo · säker anslutning: ${window.isSecureContext ? 'ja' : 'nej'} · direktknapp aktiv`);
+  // onclick-egenskapen fungerar även när inline-script blockeras av CSP.
+  startButton.removeAttribute('onclick');
+  startButton.onclick = (event) => activateCamera('onclick-property', event);
+  startButton.addEventListener('touchend', (event) => activateCamera('touchend-reserv', event), { passive: false });
+  setStatus(`Kameramodul v20260728-4 redo · säker anslutning: ${window.isSecureContext ? 'ja' : 'nej'} · direktbindning aktiv`);
 }
 
 window.addEventListener('pagehide', () => window.TimberCamera?.stop());
