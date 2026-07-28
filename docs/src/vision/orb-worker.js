@@ -8,29 +8,34 @@ function toGray(image) {
   return gray;
 }
 
-function detectCorners(gray, width, height, limit = 220) {
+function detectCorners(gray, width, height, limit = 160) {
   const candidates = [];
   const margin = 8;
-  for (let y = margin; y < height - margin; y += 3) {
-    for (let x = margin; x < width - margin; x += 3) {
+  for (let y = margin; y < height - margin; y += 4) {
+    for (let x = margin; x < width - margin; x += 4) {
       const index = (y * width) + x;
       const gx = Math.abs(gray[index + 1] - gray[index - 1]);
       const gy = Math.abs(gray[index + width] - gray[index - width]);
       const diagonal = Math.abs(gray[index + width + 1] - gray[index - width - 1]);
       const score = gx + gy + Math.round(diagonal * 0.5);
-      if (score >= 42) candidates.push({ x, y, score });
+      if (score >= 48) candidates.push({ x, y, score });
     }
   }
   candidates.sort((left, right) => right.score - left.score);
 
   const selected = [];
-  const minDistanceSquared = 9 * 9;
+  const minDistanceSquared = 10 * 10;
   for (const candidate of candidates) {
-    if (selected.every((point) => {
+    let separated = true;
+    for (const point of selected) {
       const dx = point.x - candidate.x;
       const dy = point.y - candidate.y;
-      return (dx * dx) + (dy * dy) >= minDistanceSquared;
-    })) {
+      if ((dx * dx) + (dy * dy) < minDistanceSquared) {
+        separated = false;
+        break;
+      }
+    }
+    if (separated) {
       selected.push(candidate);
       if (selected.length >= limit) break;
     }
@@ -38,7 +43,7 @@ function detectCorners(gray, width, height, limit = 220) {
   return selected;
 }
 
-function patchDistance(grayA, widthA, pointA, grayB, widthB, pointB, radius = 3) {
+function patchDistance(grayA, widthA, pointA, grayB, widthB, pointB, radius = 2) {
   let total = 0;
   let count = 0;
   for (let dy = -radius; dy <= radius; dy += 1) {
@@ -52,15 +57,18 @@ function patchDistance(grayA, widthA, pointA, grayB, widthB, pointB, radius = 3)
   return total / count;
 }
 
-function matchFeatures(left, right) {
+function matchFeatures(id, left, right) {
+  self.postMessage({ id, progress: 'grayscale' });
   const grayA = toGray(left);
   const grayB = toGray(right);
+  self.postMessage({ id, progress: 'corners' });
   const pointsA = detectCorners(grayA, left.width, left.height);
   const pointsB = detectCorners(grayB, right.width, right.height);
   const accepted = [];
   const maxShiftX = Math.round(Math.max(left.width, right.width) * 0.28);
   const maxShiftY = Math.round(Math.max(left.height, right.height) * 0.18);
 
+  self.postMessage({ id, progress: 'matching', keypointsA: pointsA.length, keypointsB: pointsB.length });
   for (const pointA of pointsA) {
     let best = null;
     let second = null;
@@ -89,15 +97,17 @@ function matchFeatures(left, right) {
     keypointsB: pointsB.length,
     matches: accepted.length,
     points: accepted.slice(0, 100),
-    algorithm: 'gradient-corners-patch-sad-v1',
+    algorithm: 'gradient-corners-patch-sad-v2',
   };
 }
+
+self.postMessage({ type: 'ready', version: '20260728-17' });
 
 self.addEventListener('message', (event) => {
   const { id, type, payload } = event.data ?? {};
   if (type !== 'match') return;
   try {
-    const result = matchFeatures(payload.left, payload.right);
+    const result = matchFeatures(id, payload.left, payload.right);
     self.postMessage({ id, ok: true, result });
   } catch (error) {
     self.postMessage({ id, ok: false, error: error instanceof Error ? error.message : String(error) });
