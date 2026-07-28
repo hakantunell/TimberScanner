@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#17351f">
   <title>TimberScanner</title>
-  <link rel="stylesheet" href="styles.css?v=20260728-25">
+  <link rel="stylesheet" href="styles.css?v=20260728-26">
   <script type="importmap">
     {
       "imports": {
-        "./src/transfer/cloud-relay.js": "./src/transfer/cloud-relay.js?v=20260728-25"
+        "./src/transfer/cloud-relay.js": "./src/transfer/cloud-relay.js?v=20260728-26"
       }
     }
   </script>
@@ -17,15 +17,15 @@
 <body>
   <main>
     <header>
-      <p class="eyebrow">Mobil prototyp</p>
+      <p class="eyebrow">Lokal analysprototyp</p>
       <h1>TimberScanner</h1>
     </header>
 
     <section id="role-picker" class="panel">
-      <h2>Välj läge</h2>
+      <h2>Välj kamerakälla</h2>
       <div class="role-grid">
-        <button id="viewer-mode">Dator / livevy</button>
-        <button id="capture-mode">Telefon / skanna</button>
+        <button id="viewer-mode">USB-webbkamera</button>
+        <button id="capture-mode">Mobilkamera</button>
       </div>
     </section>
 
@@ -47,8 +47,8 @@
     <section id="work-screen" hidden>
       <section class="work-toolbar panel">
         <div>
-          <strong id="work-status">Ansluten</strong>
-          <span id="work-detail">Väntar på bildrutor</span>
+          <strong id="work-status">USB-webbkamera</strong>
+          <span id="work-detail">Starta kameran</span>
         </div>
         <button id="show-pairing" class="secondary">Visa QR-kod</button>
       </section>
@@ -74,7 +74,7 @@
         </section>
 
         <section class="controls">
-          <button id="start-camera" type="button">Starta kamera</button>
+          <button id="start-camera" type="button">Starta USB-kamera</button>
           <button id="capture" disabled>Ta bild manuellt</button>
           <button id="new-pass" disabled>Ny rotation</button>
           <button id="export" class="secondary" disabled>Exportera reservkopia</button>
@@ -90,7 +90,7 @@
         <article><span>Bildrutor</span><strong id="image-count">0</strong></article>
         <article><span>Aktuell rotation</span><strong id="pass-count">1</strong></article>
         <article><span>Analyserade</span><strong id="analysis-count">0</strong></article>
-        <article><span>Urval</span><strong id="storage-status">Klar</strong></article>
+        <article><span>Urval</span><strong id="storage-status">Lokalt</strong></article>
       </section>
 
       <section id="sparse-reconstruction" class="diagnostic-panel" hidden>
@@ -131,6 +131,6 @@
     </section>
   </main>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script type="module" src="src/runtime/mode-loader.js?v=20260728-25"></script>
+  <script type="module" src="src/runtime/mode-loader.js?v=20260728-26"></script>
 </body>
 </html>
