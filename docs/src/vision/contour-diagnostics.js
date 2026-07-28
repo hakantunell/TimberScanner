@@ -1,3 +1,5 @@
+import '../capture/camera-button-fix.js';
+
 const captures = document.querySelector('#captures');
 const panel = document.querySelector('#contour-diagnostics');
 const sourceCanvas = document.querySelector('#contour-source');
