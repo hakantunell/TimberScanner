@@ -1,4 +1,4 @@
-const VERSION = '20260728-6';
+const VERSION = '20260728-7';
 const params = new URLSearchParams(window.location.search);
 const captureMode = params.get('mode') === 'capture';
 
