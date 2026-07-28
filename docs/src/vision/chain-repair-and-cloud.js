@@ -27,7 +27,7 @@ function imageData(image, maxWidth = 480) {
 function runMatch(firstFigure, secondFigure) {
   const first = imageData(firstFigure.querySelector('img'));
   const second = imageData(secondFigure.querySelector('img'));
-  const worker = new Worker(new URL('./orb-worker-v29.js?v=20260728-32', import.meta.url), { type: 'classic' });
+  const worker = new Worker(new URL('./orb-worker-v29.js?v=20260728-33', import.meta.url), { type: 'classic' });
   const id = crypto.randomUUID?.() ?? String(Date.now());
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => { worker.terminate(); reject(new Error('Hoppmatchningen tog för lång tid')); }, 25000);
@@ -108,11 +108,45 @@ function fitPoints(points, rect, padding = 28) {
   const scale = Math.min((rect.width - padding * 2) / spanX, (rect.height - padding * 2) / spanY);
   const centerX = (bounds.minX + bounds.maxX) / 2;
   const centerY = (bounds.minY + bounds.maxY) / 2;
-  return points.map((p) => ({
+  return points.map((p, index) => ({
     ...p,
+    index,
     sx: rect.x + rect.width / 2 + (p.x - centerX) * scale,
     sy: rect.y + rect.height / 2 + (p.y - centerY) * scale,
   }));
+}
+
+function spreadOverlaps(fitted, cellSize = 4.5) {
+  const groups = new Map();
+  for (const point of fitted) {
+    const key = `${Math.round(point.sx / cellSize)}:${Math.round(point.sy / cellSize)}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(point);
+  }
+
+  const spread = [];
+  let maxCluster = 0;
+  for (const group of groups.values()) {
+    maxCluster = Math.max(maxCluster, group.length);
+    group.forEach((point, index) => {
+      if (group.length === 1) {
+        spread.push({ ...point, clusterSize: 1 });
+        return;
+      }
+      const ring = Math.floor(Math.sqrt(index));
+      const countInRing = Math.max(6, ring * 8);
+      const angle = (index % countInRing) / countInRing * Math.PI * 2 + ring * 0.37;
+      const radius = 1.8 + ring * 2.4;
+      spread.push({
+        ...point,
+        sx: point.sx + Math.cos(angle) * radius,
+        sy: point.sy + Math.sin(angle) * radius,
+        clusterSize: group.length,
+      });
+    });
+  }
+
+  return { points: spread, uniquePositions: groups.size, maxCluster };
 }
 
 function drawView(ctx, title, points, rect) {
@@ -123,13 +157,14 @@ function drawView(ctx, title, points, rect) {
   ctx.font = '600 14px system-ui, sans-serif';
   ctx.fillText(title, rect.x + 14, rect.y + 22);
 
-  const fitted = fitPoints(points, rect, 34);
+  const fitted = fitPoints(points, rect, 38);
+  const spread = spreadOverlaps(fitted);
   let drawn = 0;
-  for (const p of fitted.sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0))) {
+  for (const p of spread.points.sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0))) {
     if (p.sx < rect.x || p.sx > rect.x + rect.width || p.sy < rect.y || p.sy > rect.y + rect.height) continue;
-    ctx.globalAlpha = p.quality === 'approved' ? 0.92 : 0.58;
+    ctx.globalAlpha = p.quality === 'approved' ? 0.72 : 0.42;
     ctx.fillStyle = p.quality === 'approved' ? '#dcefdc' : '#f2d98b';
-    const radius = p.quality === 'approved' ? 2.6 : 2.1;
+    const radius = p.clusterSize > 1 ? 1.7 : 2.1;
     ctx.beginPath();
     ctx.arc(p.sx, p.sy, radius, 0, Math.PI * 2);
     ctx.fill();
@@ -138,9 +173,9 @@ function drawView(ctx, title, points, rect) {
   ctx.globalAlpha = 1;
   ctx.fillStyle = 'rgba(255,255,255,.65)';
   ctx.font = '12px system-ui, sans-serif';
-  ctx.fillText(`${drawn}/${points.length} punkter ritade`, rect.x + 14, rect.y + rect.height - 12);
+  ctx.fillText(`${drawn}/${points.length} punkter · ${spread.uniquePositions} unika lägen · största kluster ${spread.maxCluster}`, rect.x + 14, rect.y + rect.height - 12);
   ctx.restore();
-  return drawn;
+  return { drawn, uniquePositions: spread.uniquePositions, maxCluster: spread.maxCluster };
 }
 
 function drawCloud(points) {
@@ -149,7 +184,7 @@ function drawCloud(points) {
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#0d1210';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  if (!points.length) return { side: 0, top: 0 };
+  if (!points.length) return { side: { drawn: 0, uniquePositions: 0, maxCluster: 0 }, top: { drawn: 0, uniquePositions: 0, maxCluster: 0 } };
 
   const angleY = -0.72;
   const angleX = 0.38;
@@ -216,6 +251,6 @@ window.addEventListener('timberscanner:match-chain-ready', async (event) => {
   const rendered = drawCloud(cloud);
   const skipped = path.edges.filter((edge) => edge.skip).map((edge) => edge.skipped + 1);
   status.textContent = `Preliminärt punktmoln: ${cloud.length} punkter`;
-  detail.textContent = `${path.nodes.length}/${figures.length} bilder i längsta reparerade kedjan · ${skipApproved} godkända och ${skipWeak} svaga hoppmatchningar · ritade ${rendered.side}/${cloud.length} i perspektivvy och ${rendered.top}/${cloud.length} ovanifrån${skipped.length ? ` · hoppade över bild ${skipped.join(', ')}` : ''}`;
+  detail.textContent = `${path.nodes.length}/${figures.length} bilder i längsta reparerade kedjan · ${skipApproved} godkända och ${skipWeak} svaga hoppmatchningar · perspektiv: ${rendered.side.drawn} ritade på ${rendered.side.uniquePositions} grundlägen, största kluster ${rendered.side.maxCluster} · ovanifrån: ${rendered.top.drawn} på ${rendered.top.uniquePositions} grundlägen${skipped.length ? ` · hoppade över bild ${skipped.join(', ')}` : ''}`;
   window.dispatchEvent(new CustomEvent('timberscanner:sparse-cloud-ready', { detail: { cloud, path, skipApproved, skipWeak, rendered } }));
 });
