@@ -5,6 +5,9 @@ const analysisCount = document.querySelector('#analysis-count');
 const storageStatus = document.querySelector('#storage-status');
 
 const analysed = new Set();
+const qualityById = new Map();
+const signatureById = new Map();
+const DUPLICATE_DISTANCE = 8;
 let running = false;
 let scheduled = false;
 
@@ -27,14 +30,107 @@ function waitForImage(image) {
   });
 }
 
+function makeSignature(sourceCanvas) {
+  const width = 16;
+  const height = 12;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  context.drawImage(sourceCanvas, 0, 0, width, height);
+  const { data } = context.getImageData(0, 0, width, height);
+  const signature = new Uint8Array(width * height);
+  for (let index = 0; index < signature.length; index += 1) {
+    const offset = index * 4;
+    signature[index] = Math.round((data[offset] * 0.299) + (data[offset + 1] * 0.587) + (data[offset + 2] * 0.114));
+  }
+  return signature;
+}
+
+function signatureDistance(left, right) {
+  if (!left || !right || left.length !== right.length) return Infinity;
+  let total = 0;
+  for (let index = 0; index < left.length; index += 1) total += Math.abs(left[index] - right[index]);
+  return total / left.length;
+}
+
+function baseCaption(figure) {
+  const caption = figure.querySelector('figcaption');
+  if (!caption) return '';
+  if (!caption.dataset.baseCaption) {
+    caption.dataset.baseCaption = caption.textContent.replace(/ · Analys avstängd$/, '');
+  }
+  return caption.dataset.baseCaption;
+}
+
+function applySelection() {
+  if (!captures) return;
+  const figures = [...captures.querySelectorAll('figure[data-capture-id]')].reverse();
+  const selected = [];
+
+  for (const figure of figures) {
+    const id = figure.dataset.captureId;
+    const quality = qualityById.get(id);
+    const signature = signatureById.get(id);
+    if (!quality || !signature) continue;
+
+    if (quality.sharpness === 'blurry') {
+      figure.dataset.selection = 'rejected-blurry';
+      continue;
+    }
+
+    const previous = selected.at(-1);
+    if (!previous) {
+      selected.push({ figure, id, quality, signature });
+      figure.dataset.selection = 'selected';
+      continue;
+    }
+
+    const distance = signatureDistance(previous.signature, signature);
+    if (distance >= DUPLICATE_DISTANCE) {
+      selected.push({ figure, id, quality, signature });
+      figure.dataset.selection = 'selected';
+      continue;
+    }
+
+    if (quality.sharpnessScore > previous.quality.sharpnessScore) {
+      previous.figure.dataset.selection = 'rejected-duplicate';
+      selected[selected.length - 1] = { figure, id, quality, signature };
+      figure.dataset.selection = 'selected';
+    } else {
+      figure.dataset.selection = 'rejected-duplicate';
+    }
+  }
+
+  for (const figure of figures) {
+    const id = figure.dataset.captureId;
+    const quality = qualityById.get(id);
+    if (!quality) continue;
+    const caption = figure.querySelector('figcaption');
+    const selection = figure.dataset.selection;
+    figure.className = `quality-${quality.sharpness}`;
+    figure.style.opacity = selection === 'selected' ? '1' : '0.42';
+    figure.style.outline = selection === 'selected' ? '3px solid rgba(70,180,100,.75)' : 'none';
+    const selectionText = selection === 'selected'
+      ? 'Vald för analys'
+      : selection === 'rejected-blurry'
+        ? 'Bortvald: oskarp'
+        : 'Bortvald: nästan identisk';
+    if (caption) caption.textContent = `${baseCaption(figure)} · ${describeSharpness(quality)} · ${selectionText}`;
+  }
+
+  if (storageStatus) storageStatus.textContent = `Urval ${selected.length}/${qualityById.size}`;
+  window.dispatchEvent(new CustomEvent('timberscanner:image-selection', {
+    detail: { selectedIds: selected.map((item) => item.id), analysed: qualityById.size },
+  }));
+}
+
 async function analyseFigure(figure) {
   const id = figure.dataset.captureId;
   if (!id || analysed.has(id)) return;
 
   const image = figure.querySelector('img');
-  const caption = figure.querySelector('figcaption');
   if (!image) return;
-
   await waitForImage(image);
 
   const maxWidth = 960;
@@ -46,9 +142,10 @@ async function analyseFigure(figure) {
 
   const quality = analyseCanvasQuality(canvas);
   analysed.add(id);
-  figure.className = `quality-${quality.sharpness}`;
-  if (caption) caption.textContent = `${caption.textContent.replace(/ · Analys avstängd$/, '')} · ${describeSharpness(quality)}`;
+  qualityById.set(id, quality);
+  signatureById.set(id, makeSignature(canvas));
   updateCount();
+  applySelection();
 }
 
 async function runQueue() {
@@ -79,7 +176,7 @@ async function runQueue() {
     }
   } finally {
     running = false;
-    if (storageStatus) storageStatus.textContent = 'Analys klar';
+    applySelection();
   }
 }
 
