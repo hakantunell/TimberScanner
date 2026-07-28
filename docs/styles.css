@@ -19,8 +19,9 @@ h2 { margin-top: 28px; }
 .scan-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-width: min(100%, 300px); }
 .camera-card { position: relative; overflow: hidden; min-height: 240px; border-radius: 18px; background: #101410; display: grid; place-items: center; }
 video { display: block; width: 100%; max-height: 65vh; object-fit: contain; }
-#camera-placeholder { position: absolute; color: #dce5dc; }
-.controls { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 14px 0; }
+#camera-placeholder { position: absolute; color: #dce5dc; pointer-events: none; }
+.controls { position: relative; z-index: 5; display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 14px 0; pointer-events: auto; }
+.controls button { position: relative; z-index: 6; pointer-events: auto; touch-action: manipulation; -webkit-tap-highlight-color: rgba(0,0,0,.08); }
 button { min-height: 48px; border: 0; border-radius: 12px; padding: 10px 14px; font: inherit; font-weight: 700; background: #285f35; color: white; }
 button.secondary { background: #d9e2d9; color: #172119; }
 button:disabled { opacity: .45; }
