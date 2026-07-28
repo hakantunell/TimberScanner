@@ -13,7 +13,7 @@ let workerReady = false;
 
 function workerUrl() {
   const url = new URL('./orb-worker.js', import.meta.url);
-  url.searchParams.set('v', '20260728-19');
+  url.searchParams.set('v', '20260728-20');
   return url;
 }
 
@@ -33,17 +33,19 @@ function ensureWorker() {
     const message = event.data ?? {};
     if (message.type === 'ready') {
       workerReady = true;
-      detail.textContent = `Worker redo · version ${message.version}`;
+      detail.textContent = `Worker redo · ${message.engine ?? 'bildmatchning'} · version ${message.version}`;
       return;
     }
     const entry = pending.get(message.id);
     if (!entry) return;
     if (message.progress) {
       const names = {
-        grayscale: 'Konverterar central bildyta till gråskala',
-        corners: 'Letar hörnpunkter i central ROI',
-        matching: `Matchar ${message.keypointsA ?? 0}/${message.keypointsB ?? 0} hörnpunkter`,
-        ransac: `Affin RANSAC på ${message.rawMatches ?? 0} råa matchningar`,
+        'opencv-loading': 'Laddar OpenCV i workertråden första gången',
+        'opencv-ready': 'OpenCV ORB är redo',
+        mask: 'Skapar foreground-mask för stockområdet',
+        orb: 'Beräknar ORB-nyckelpunkter och deskriptorer',
+        matching: `BFMatcher jämför ${message.keypointsA ?? 0}/${message.keypointsB ?? 0} ORB-punkter`,
+        ransac: `Affin RANSAC på ${message.rawMatches ?? 0} ömsesidiga matchningar`,
       };
       detail.textContent = names[message.progress] ?? message.progress;
       return;
@@ -51,10 +53,10 @@ function ensureWorker() {
     pending.delete(message.id);
     window.clearTimeout(entry.timeout);
     if (message.ok) entry.resolve(message.result);
-    else entry.reject(new Error(message.error || 'Bildmatchningsworkern misslyckades'));
+    else entry.reject(new Error(message.error || 'ORB-workern misslyckades'));
   });
   worker.addEventListener('error', (event) => {
-    const error = new Error(event.message || 'Bildmatchningsworkern kraschade');
+    const error = new Error(event.message || 'ORB-workern kraschade');
     failPending(error);
     worker.terminate();
     worker = null;
@@ -67,11 +69,11 @@ function selectedFigures() {
   return [...document.querySelectorAll('#captures figure[data-selection="selected"]')].reverse();
 }
 
-function imageData(image, maxWidth = 320) {
+function imageData(image, maxWidth = 480) {
   const scale = Math.min(1, maxWidth / image.naturalWidth);
   const work = document.createElement('canvas');
-  work.width = Math.max(160, Math.round(image.naturalWidth * scale));
-  work.height = Math.max(120, Math.round(image.naturalHeight * scale));
+  work.width = Math.max(200, Math.round(image.naturalWidth * scale));
+  work.height = Math.max(150, Math.round(image.naturalHeight * scale));
   const context = work.getContext('2d', { willReadFrequently: true });
   context.drawImage(image, 0, 0, work.width, work.height);
   return { canvas: work, data: context.getImageData(0, 0, work.width, work.height) };
@@ -87,8 +89,8 @@ function requestMatch(left, right) {
       worker?.terminate();
       worker = null;
       workerReady = false;
-      reject(new Error('Bildmatchningsworkern tog längre än 8 sekunder'));
-    }, 8000);
+      reject(new Error('ORB-workern tog längre än 45 sekunder'));
+    }, 45000);
     pending.set(id, { resolve, reject, timeout });
     ensureWorker().postMessage({
       id,
@@ -101,7 +103,7 @@ function requestMatch(left, right) {
   });
 }
 
-function drawPair(left, right, points = [], label = 'Förbereder matchning…') {
+function drawPair(left, right, points = [], label = 'Förbereder ORB-matchning…') {
   const width = 960;
   const half = width / 2;
   const scaleA = Math.min(half / left.width, 360 / left.height);
@@ -113,8 +115,8 @@ function drawPair(left, right, points = [], label = 'Förbereder matchning…') 
   context.fillRect(0, 0, width, 420);
   context.drawImage(left, 0, 0, left.width * scaleA, left.height * scaleA);
   context.drawImage(right, half, 0, right.width * scaleB, right.height * scaleB);
-  context.strokeStyle = 'rgba(244,211,94,.72)';
-  context.lineWidth = 1.25;
+  context.strokeStyle = 'rgba(244,211,94,.82)';
+  context.lineWidth = 1.35;
   for (const match of points) {
     context.beginPath();
     context.moveTo(match.a.x * scaleA, match.a.y * scaleA);
@@ -132,10 +134,15 @@ async function matchPair(firstFigure, secondFigure) {
   if (!firstImage?.naturalWidth || !secondImage?.naturalWidth) throw new Error('Bildparet är inte färdigavkodat');
   const left = imageData(firstImage);
   const right = imageData(secondImage);
-  drawPair(left.canvas, right.canvas, [], 'Central ROI skickad till Web Worker');
+  drawPair(left.canvas, right.canvas, [], 'Bildparet skickat till OpenCV ORB-worker');
   detail.textContent = `Skickar ${left.data.width}×${left.data.height} och ${right.data.width}×${right.data.height}`;
   const result = await requestMatch(left, right);
-  drawPair(left.canvas, right.canvas, result.points, `${result.matches}/${result.rawMatches} affina inliers · ${result.inlierRatio}%`);
+  drawPair(
+    left.canvas,
+    right.canvas,
+    result.points,
+    `${result.matches}/${result.rawMatches} RANSAC-inliers · ${result.inlierRatio}% · OpenCV ORB`,
+  );
   return result;
 }
 
@@ -154,22 +161,22 @@ registerAnalysisStage({
       const second = figures[index];
       const pairId = `${first.dataset.captureId}|${second.dataset.captureId}`;
       if (processedPairs.has(pairId)) continue;
-      status.textContent = `Matchar valt bildpar ${index}/${figures.length - 1}…`;
-      detail.textContent = workerReady ? 'Worker redo' : 'Startar worker…';
+      status.textContent = `ORB-matchar valt bildpar ${index}/${figures.length - 1}…`;
+      detail.textContent = workerReady ? 'OpenCV-worker redo' : 'Startar OpenCV-worker…';
       try {
         const result = await matchPair(first, second);
         processedPairs.add(pairId);
         results.push({ pairId, ...result });
-        const stable = result.matches >= 10 && result.inlierRatio >= 30 && result.meanError <= 4.5;
-        status.textContent = stable ? 'Affint stabil matchning' : 'Affint svag matchning';
+        const stable = result.matches >= 12 && result.inlierRatio >= 35 && result.meanError <= 4;
+        status.textContent = stable ? 'Geometriskt stabil ORB-matchning' : 'Geometriskt svag ORB-matchning';
         const motion = result.motion;
         const motionText = motion
           ? `rotation ${motion.rotation}° · skala ${motion.scale} · förskjutning ${motion.tx}, ${motion.ty} px`
           : 'ingen stabil affin modell';
-        detail.textContent = `${result.matches}/${result.rawMatches} inliers (${result.inlierRatio}%) · fel ${result.meanError}px · ${motionText}`;
+        detail.textContent = `${result.matches}/${result.rawMatches} inliers (${result.inlierRatio}%) · ${result.ratioMatches} ratio-matchningar · fel ${result.meanError}px · mask ${result.maskCoverageA}/${result.maskCoverageB}% · ${motionText}`;
         window.dispatchEvent(new CustomEvent('timberscanner:pair-matched', { detail: { pairId, ...result } }));
       } catch (error) {
-        status.textContent = 'Bildmatchningen misslyckades';
+        status.textContent = 'ORB-matchningen misslyckades';
         detail.textContent = error instanceof Error ? error.message : String(error);
         console.error(error);
       }
@@ -177,8 +184,8 @@ registerAnalysisStage({
       return;
     }
     if (results.length) {
-      const usable = results.filter((item) => item.matches >= 10 && item.inlierRatio >= 30 && item.meanError <= 4.5).length;
-      status.textContent = `Bildmatchning klar: ${usable}/${results.length} affint stabila par`;
+      const usable = results.filter((item) => item.matches >= 12 && item.inlierRatio >= 35 && item.meanError <= 4).length;
+      status.textContent = `ORB-matchning klar: ${usable}/${results.length} geometriskt stabila par`;
       detail.textContent = 'Pose och triangulering är fortfarande avstängda';
     }
   },
