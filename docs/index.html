@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#17351f">
   <title>TimberScanner</title>
-  <link rel="stylesheet" href="styles.css?v=20260728-19">
+  <link rel="stylesheet" href="styles.css?v=20260728-20">
   <script type="importmap">
     {
       "imports": {
-        "./src/transfer/cloud-relay.js": "./src/transfer/cloud-relay.js?v=20260728-19"
+        "./src/transfer/cloud-relay.js": "./src/transfer/cloud-relay.js?v=20260728-20"
       }
     }
   </script>
@@ -99,16 +99,16 @@
           <div><strong id="sparse-status">Väntar på bildmatchning</strong><span id="sparse-detail">Ingen triangulering ännu</span></div>
         </div>
         <div class="diagnostic-canvas-wrap"><canvas id="sparse-point-cloud"></canvas></div>
-        <p class="diagnostic-note">Pose och triangulering aktiveras först när den affina matchningsfiltreringen är stabil.</p>
+        <p class="diagnostic-note">Pose och triangulering aktiveras först när ORB-matchningen är geometriskt stabil.</p>
       </section>
 
       <section id="feature-matching" class="diagnostic-panel" hidden>
         <div class="diagnostic-heading">
-          <div><p class="eyebrow">Analyspipeline</p><h2>Central ROI och affin RANSAC</h2></div>
+          <div><p class="eyebrow">Analyspipeline</p><h2>OpenCV ORB och stockmask</h2></div>
           <div><strong id="feature-match-status">Väntar på två valda bilder</strong><span id="feature-match-detail">Ingen jämförelse ännu</span></div>
         </div>
         <div class="diagnostic-canvas-wrap"><canvas id="feature-match-canvas"></canvas></div>
-        <p class="diagnostic-note">Matchningen prioriterar bildens centrala område och filtrerar med en affin modell som tillåter förskjutning, rotation och mindre skaländring.</p>
+        <p class="diagnostic-note">Gula linjer visar endast ömsesidiga ORB-matchningar som dessutom klarar affin RANSAC. En foreground-mask minskar bakgrundens inflytande.</p>
       </section>
 
       <section id="contour-diagnostics" class="diagnostic-panel" hidden>
@@ -131,6 +131,6 @@
     </section>
   </main>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script type="module" src="src/runtime/mode-loader.js?v=20260728-19"></script>
+  <script type="module" src="src/runtime/mode-loader.js?v=20260728-20"></script>
 </body>
 </html>
