@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#17351f">
   <title>TimberScanner</title>
-  <link rel="stylesheet" href="styles.css?v=20260728-10">
+  <link rel="stylesheet" href="styles.css?v=20260728-11">
   <script type="importmap">
     {
       "imports": {
-        "./src/transfer/cloud-relay.js": "./src/transfer/cloud-relay.js?v=20260728-10"
+        "./src/transfer/cloud-relay.js": "./src/transfer/cloud-relay.js?v=20260728-11"
       }
     }
   </script>
@@ -90,7 +90,7 @@
         <article><span>Bildrutor</span><strong id="image-count">0</strong></article>
         <article><span>Aktuell rotation</span><strong id="pass-count">1</strong></article>
         <article><span>Analyserade</span><strong id="analysis-count">0</strong></article>
-        <article><span>Lagring</span><strong id="storage-status">Klar</strong></article>
+        <article><span>Urval</span><strong id="storage-status">Klar</strong></article>
       </section>
 
       <section id="sparse-reconstruction" class="diagnostic-panel" hidden>
@@ -125,12 +125,12 @@
 
       <section class="analysis-section">
         <h2>Analysunderlag</h2>
-        <p>Bildrutorna visas bara under prototypfasen. Färgen visar aktuell skärpeklassning.</p>
+        <p>Grön ram betyder vald för fortsatt analys. Nedtonade bilder är oskarpa eller nästan identiska med en skarpare granne.</p>
         <div id="captures" class="captures"></div>
       </section>
     </section>
   </main>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script type="module" src="src/runtime/mode-loader.js?v=20260728-10"></script>
+  <script type="module" src="src/runtime/mode-loader.js?v=20260728-11"></script>
 </body>
 </html>
