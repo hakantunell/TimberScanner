@@ -35,7 +35,7 @@ function ensureWorker() {
 }
 
 function selectedFigures() {
-  return [...document.querySelectorAll('#captures figure[data-selected="true"]')].reverse();
+  return [...document.querySelectorAll('#captures figure[data-selection="selected"]')].reverse();
 }
 
 function imageData(image, maxWidth = 480) {
@@ -111,8 +111,12 @@ registerAnalysisStage({
   name: 'feature-matching',
   async run() {
     const figures = selectedFigures();
-    if (figures.length < 2) return;
     panel.hidden = false;
+    if (figures.length < 2) {
+      status.textContent = `Väntar på två valda bilder (${figures.length}/2)`;
+      detail.textContent = 'Skärpeanalys och bildurval måste bli klara först';
+      return;
+    }
 
     for (let index = 1; index < figures.length; index += 1) {
       const first = figures[index - 1];
