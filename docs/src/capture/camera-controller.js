@@ -5,6 +5,9 @@ const newPassButton = document.querySelector('#new-pass');
 const placeholder = document.querySelector('#camera-placeholder');
 const status = document.querySelector('#camera-status');
 
+let starting = false;
+let lastActivationAt = 0;
+
 function setStatus(message) {
   if (status) status.textContent = message;
   console.info(`[camera] ${message}`);
@@ -18,7 +21,8 @@ function describeCameraError(error) {
   }
   if (name === 'NotFoundError' || name === 'DevicesNotFoundError') return 'Ingen kamera hittades på enheten.';
   if (name === 'NotReadableError' || name === 'TrackStartError') return 'Kameran används av en annan app eller kunde inte öppnas. Stäng andra kameraappar och försök igen.';
-  if (name === 'OverconstrainedError') return 'Telefonen accepterade inte önskad kameraupplösning. Försöker med standardinställning.';
+  if (name === 'OverconstrainedError') return 'Telefonen accepterade inte önskad kameraupplösning.';
+  if (name === 'AbortError') return 'Kamerastarten avbröts. Försök igen.';
   return `${name}: ${error?.message || 'Okänt kamerafel'}`;
 }
 
@@ -49,6 +53,8 @@ async function requestCamera() {
   video.srcObject = mediaStream;
   video.muted = true;
   video.playsInline = true;
+  video.setAttribute('playsinline', '');
+  video.setAttribute('webkit-playsinline', '');
 
   setStatus('Kameran öppnades – startar förhandsvisning…');
   await video.play();
@@ -62,23 +68,27 @@ async function requestCamera() {
   if (placeholder) placeholder.hidden = true;
   if (captureButton) captureButton.disabled = false;
   if (newPassButton) newPassButton.disabled = false;
-  startButton.disabled = true;
+  if (startButton) startButton.disabled = true;
   setStatus(`Kamera klar · ${video.videoWidth}×${video.videoHeight}`);
   window.dispatchEvent(new CustomEvent('timberscanner:camera-ready', {
     detail: { width: video.videoWidth, height: video.videoHeight },
   }));
 }
 
-async function handleStart(event) {
-  event.preventDefault();
-  event.stopImmediatePropagation();
-  if (startButton.disabled) return;
-  startButton.disabled = true;
-  setStatus('Startknappen mottagen');
+async function activateCamera(sourceEvent) {
+  const now = Date.now();
+  if (starting || now - lastActivationAt < 700) return;
+  lastActivationAt = now;
+  starting = true;
+  sourceEvent?.preventDefault?.();
+  sourceEvent?.stopImmediatePropagation?.();
+
+  if (startButton) startButton.disabled = true;
+  setStatus(`Startkommando mottaget (${sourceEvent?.type ?? 'program'})`);
   try {
     await requestCamera();
   } catch (error) {
-    startButton.disabled = false;
+    if (startButton) startButton.disabled = false;
     const message = describeCameraError(error);
     if (placeholder) {
       placeholder.hidden = false;
@@ -86,16 +96,45 @@ async function handleStart(event) {
     }
     setStatus(message);
     console.error('[camera] Kunde inte starta kameran', error);
+  } finally {
+    starting = false;
   }
 }
 
-if (startButton && video) {
-  // Capture-fasen gör denna robusta implementation till ensam ägare av kameraknappen.
-  startButton.addEventListener('click', handleStart, { capture: true });
-  setStatus(`Kameramodul redo · säker anslutning: ${window.isSecureContext ? 'ja' : 'nej'}`);
+function isCameraStartTarget(event) {
+  const target = event.target instanceof Element ? event.target.closest('#start-camera') : null;
+  return Boolean(target);
 }
 
-window.addEventListener('pagehide', () => {
-  window.__timberCameraStream?.getTracks?.().forEach((track) => track.stop());
-  window.__timberCameraStream = null;
+// Delegerad lyssning fungerar även i iOS när vyn visas efter att modulen laddats.
+for (const eventName of ['pointerup', 'touchend', 'click']) {
+  document.addEventListener(eventName, (event) => {
+    if (!isCameraStartTarget(event)) return;
+    activateCamera(event);
+  }, { capture: true, passive: false });
+}
+
+window.TimberCamera = Object.freeze({
+  start: () => activateCamera(),
+  isReady: () => Boolean(video?.videoWidth && video?.videoHeight),
+  getStream: () => window.__timberCameraStream ?? null,
+  stop: () => {
+    window.__timberCameraStream?.getTracks?.().forEach((track) => track.stop());
+    window.__timberCameraStream = null;
+    if (video) video.srcObject = null;
+    if (startButton) startButton.disabled = false;
+    if (captureButton) captureButton.disabled = true;
+    if (newPassButton) newPassButton.disabled = true;
+    if (placeholder) {
+      placeholder.hidden = false;
+      placeholder.textContent = 'Kameran är inte startad';
+    }
+    setStatus('Kameran stoppad');
+  },
 });
+
+if (startButton && video) {
+  setStatus(`Kameramodul redo · säker anslutning: ${window.isSecureContext ? 'ja' : 'nej'} · iOS-säker knapphantering aktiv`);
+}
+
+window.addEventListener('pagehide', () => window.TimberCamera?.stop());
