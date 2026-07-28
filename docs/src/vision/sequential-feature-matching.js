@@ -19,10 +19,10 @@ function ensureWorker() {
     pending.delete(event.data.id);
     window.clearTimeout(entry.timeout);
     if (event.data.ok) entry.resolve(event.data.result);
-    else entry.reject(new Error(event.data.error || 'ORB-worker misslyckades'));
+    else entry.reject(new Error(event.data.error || 'Bildmatchningsworkern misslyckades'));
   });
   worker.addEventListener('error', (event) => {
-    const error = new Error(event.message || 'ORB-worker kraschade');
+    const error = new Error(event.message || 'Bildmatchningsworkern kraschade');
     for (const entry of pending.values()) {
       window.clearTimeout(entry.timeout);
       entry.reject(error);
@@ -38,7 +38,7 @@ function selectedFigures() {
   return [...document.querySelectorAll('#captures figure[data-selection="selected"]')].reverse();
 }
 
-function imageData(image, maxWidth = 480) {
+function imageData(image, maxWidth = 320) {
   const scale = Math.min(1, maxWidth / image.naturalWidth);
   const work = document.createElement('canvas');
   work.width = Math.max(160, Math.round(image.naturalWidth * scale));
@@ -58,8 +58,8 @@ function requestMatch(left, right) {
       pending.delete(id);
       worker?.terminate();
       worker = null;
-      reject(new Error('ORB-worker tog längre än 25 sekunder'));
-    }, 25000);
+      reject(new Error('Bildmatchningsworkern tog längre än 12 sekunder'));
+    }, 12000);
     pending.set(id, { resolve, reject, timeout });
     ensureWorker().postMessage({
       id,
@@ -81,6 +81,8 @@ function drawSummary(left, right, points, matchCount) {
   canvas.height = 420;
   const context = canvas.getContext('2d');
   context.clearRect(0, 0, width, 420);
+  context.fillStyle = '#0d1210';
+  context.fillRect(0, 0, width, 420);
   context.drawImage(left, 0, 0, left.width * scaleA, left.height * scaleA);
   context.drawImage(right, half, 0, right.width * scaleB, right.height * scaleB);
   context.strokeStyle = 'rgba(244,211,94,.45)';
@@ -93,7 +95,7 @@ function drawSummary(left, right, points, matchCount) {
   }
   context.fillStyle = 'rgba(255,255,255,.9)';
   context.font = '14px system-ui, sans-serif';
-  context.fillText(`${matchCount} godkända ORB-matchningar · kördes i Web Worker`, 16, 402);
+  context.fillText(`${matchCount} lokala detaljmatchningar · kördes i Web Worker`, 16, 402);
 }
 
 async function matchPair(firstFigure, secondFigure) {
@@ -102,6 +104,7 @@ async function matchPair(firstFigure, secondFigure) {
   if (!firstImage?.naturalWidth || !secondImage?.naturalWidth) throw new Error('Bildparet är inte färdigavkodat');
   const left = imageData(firstImage);
   const right = imageData(secondImage);
+  detail.textContent = `Bilddata skapad: ${left.data.width}×${left.data.height} och ${right.data.width}×${right.data.height}`;
   const result = await requestMatch(left, right);
   drawSummary(left.canvas, right.canvas, result.points, result.matches);
   return result;
@@ -125,19 +128,19 @@ registerAnalysisStage({
       if (processedPairs.has(pairId)) continue;
 
       status.textContent = `Matchar valt bildpar ${index}/${figures.length - 1}…`;
-      detail.textContent = 'ORB körs i Web Worker på 480 px';
+      detail.textContent = 'Förbereder två bilder för lokal worker-matchning';
       const result = await matchPair(first, second);
       processedPairs.add(pairId);
       results.push({ pairId, ...result });
-      status.textContent = result.matches >= 40 ? 'Stabil bildmatchning' : 'Svag bildmatchning';
-      detail.textContent = `${result.matches} matchningar · ${result.keypointsA}/${result.keypointsB} nyckelpunkter`;
+      status.textContent = result.matches >= 20 ? 'Stabil bildmatchning' : 'Svag bildmatchning';
+      detail.textContent = `${result.matches} matchningar · ${result.keypointsA}/${result.keypointsB} hörnpunkter`;
       window.dispatchEvent(new CustomEvent('timberscanner:pair-matched', { detail: { pairId, ...result } }));
       await new Promise((resolve) => window.setTimeout(resolve, 350));
       return;
     }
 
     if (results.length) {
-      const usable = results.filter((item) => item.matches >= 40).length;
+      const usable = results.filter((item) => item.matches >= 20).length;
       status.textContent = `Bildmatchning klar: ${usable}/${results.length} användbara par`;
       detail.textContent = 'Pose och triangulering är fortfarande avstängda';
     }
