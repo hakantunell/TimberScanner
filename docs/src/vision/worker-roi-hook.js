@@ -1,5 +1,5 @@
 const NativeWorker = window.Worker;
-const segmentedWorkerUrl = new URL('./orb-worker-v37.js?v=20260728-37', import.meta.url);
+const segmentedWorkerUrl = new URL('./orb-worker-v38.js?v=20260728-38', import.meta.url);
 
 window.Worker = function TimberScannerWorker(url, options) {
   const requested = String(url);
