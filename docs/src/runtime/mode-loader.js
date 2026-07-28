@@ -1,4 +1,4 @@
-const VERSION = '20260728-36';
+const VERSION = '20260728-37';
 const params = new URLSearchParams(window.location.search);
 const mobileMode = params.get('mode') === 'capture' || params.get('mode') === 'mobile';
 
@@ -16,6 +16,7 @@ if (mobileMode) {
   await load('../capture/camera-controller.js');
   await load('../capture/camera-button-fix.js');
   await load('../scanning/auto-capture.js');
+  await load('../vision/background-calibration.js');
   await load('../vision/analysis-pipeline.js');
   await load('../vision/worker-roi-hook.js');
   await load('../vision/sequential-feature-matching.js');
