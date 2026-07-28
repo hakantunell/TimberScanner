@@ -4,7 +4,12 @@ const captureButton = document.querySelector('#capture');
 const newPassButton = document.querySelector('#new-pass');
 const placeholder = document.querySelector('#camera-placeholder');
 const status = document.querySelector('#camera-status');
+const deviceSelect = document.querySelector('#camera-device');
+const resolutionSelect = document.querySelector('#camera-resolution');
+const selectionHelp = document.querySelector('#camera-selection-help');
 
+const DEVICE_STORAGE_KEY = 'timberscanner.camera.deviceId';
+const RESOLUTION_STORAGE_KEY = 'timberscanner.camera.resolution';
 let starting = false;
 
 function isUsbMode() {
@@ -22,7 +27,7 @@ function describeCameraError(error) {
   if (name === 'NotAllowedError' || name === 'SecurityError') {
     return 'Kameraåtkomst nekades. Tillåt kamera för timberscanner.tunell.org i webbläsaren.';
   }
-  if (name === 'NotFoundError') return 'Ingen kamera hittades.';
+  if (name === 'NotFoundError' || name === 'OverconstrainedError') return 'Den valda kameran eller upplösningen kunde inte öppnas.';
   if (name === 'NotReadableError') return 'Kameran används av en annan app eller kunde inte öppnas.';
   if (name === 'CameraTimeoutError') return 'Webbläsaren svarade inte på kameraförfrågan inom 12 sekunder.';
   return `${name}: ${error?.message || 'Okänt kamerafel'}`;
@@ -43,54 +48,74 @@ function stopStream(stream) {
   stream?.getTracks?.().forEach((track) => track.stop());
 }
 
-function preferredUsbDevice(devices) {
-  const cameras = devices.filter((device) => device.kind === 'videoinput');
-  const externalPattern = /(usb|logitech|c920|c922|brio|webcam|external)/i;
-  const integratedPattern = /(integrated|inbyggd|facetime|front|internal)/i;
-  return cameras.find((device) => externalPattern.test(device.label))
-    ?? cameras.find((device) => device.label && !integratedPattern.test(device.label))
-    ?? null;
+function selectedResolution() {
+  const saved = localStorage.getItem(RESOLUTION_STORAGE_KEY);
+  if (resolutionSelect && saved && [...resolutionSelect.options].some((option) => option.value === saved)) {
+    resolutionSelect.value = saved;
+  }
+  const [width, height] = (resolutionSelect?.value || saved || '1280x720').split('x').map(Number);
+  return {
+    width: Number.isFinite(width) ? width : 1280,
+    height: Number.isFinite(height) ? height : 720,
+  };
 }
 
-async function openInitialStream() {
-  const videoConstraints = isUsbMode()
-    ? { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }
-    : { facingMode: { ideal: 'environment' } };
-  return withTimeout(
-    navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false }),
-    12000,
-  );
+function selectedDeviceId() {
+  return deviceSelect?.value || localStorage.getItem(DEVICE_STORAGE_KEY) || '';
 }
 
-async function preferExternalUsbCamera(initialStream) {
-  if (!isUsbMode() || !navigator.mediaDevices.enumerateDevices) return initialStream;
+function videoConstraints() {
+  if (!isUsbMode()) return { facingMode: { ideal: 'environment' } };
+  const { width, height } = selectedResolution();
+  const deviceId = selectedDeviceId();
+  return {
+    ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+    width: { ideal: width },
+    height: { ideal: height },
+    frameRate: { ideal: 30 },
+  };
+}
+
+async function refreshCameraList(preferredId = selectedDeviceId()) {
+  if (!deviceSelect || !navigator.mediaDevices?.enumerateDevices) return;
   const devices = await navigator.mediaDevices.enumerateDevices();
-  const preferred = preferredUsbDevice(devices);
-  const currentId = initialStream.getVideoTracks()[0]?.getSettings?.().deviceId;
-  if (!preferred?.deviceId || preferred.deviceId === currentId) return initialStream;
+  const cameras = devices.filter((device) => device.kind === 'videoinput');
+  const current = preferredId || deviceSelect.value;
+  deviceSelect.replaceChildren();
 
-  setStatus(`Byter till USB-kamera: ${preferred.label || 'extern kamera'}…`);
-  stopStream(initialStream);
-  return withTimeout(
-    navigator.mediaDevices.getUserMedia({
-      video: {
-        deviceId: { exact: preferred.deviceId },
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
-        frameRate: { ideal: 30 },
-      },
-      audio: false,
-    }),
-    12000,
-  );
+  const defaultOption = document.createElement('option');
+  defaultOption.value = '';
+  defaultOption.textContent = 'Webbläsarens standardkamera';
+  deviceSelect.append(defaultOption);
+
+  cameras.forEach((camera, index) => {
+    const option = document.createElement('option');
+    option.value = camera.deviceId;
+    option.textContent = camera.label || `Kamera ${index + 1}`;
+    deviceSelect.append(option);
+  });
+
+  if (current && cameras.some((camera) => camera.deviceId === current)) deviceSelect.value = current;
+  else deviceSelect.value = '';
+
+  if (selectionHelp) {
+    selectionHelp.textContent = cameras.some((camera) => camera.label)
+      ? `${cameras.length} kamera${cameras.length === 1 ? '' : 'or'} hittades. Valet sparas automatiskt.`
+      : 'Starta kameran en gång för att visa kamerornas riktiga namn.';
+  }
 }
 
 async function requestCamera() {
   if (!navigator.mediaDevices?.getUserMedia) throw new Error('Webbläsaren saknar stöd för getUserMedia.');
 
-  setStatus(isUsbMode() ? 'Begär åtkomst till USB-webbkamera…' : 'Begär kameraåtkomst…');
-  let mediaStream = await openInitialStream();
-  mediaStream = await preferExternalUsbCamera(mediaStream);
+  const deviceId = selectedDeviceId();
+  const resolution = selectedResolution();
+  setStatus(deviceId ? 'Öppnar vald kamera…' : 'Öppnar standardkameran…');
+
+  const mediaStream = await withTimeout(
+    navigator.mediaDevices.getUserMedia({ video: videoConstraints(), audio: false }),
+    12000,
+  );
 
   stopStream(window.__timberCameraStream);
   window.__timberCameraStream = mediaStream;
@@ -110,13 +135,23 @@ async function requestCamera() {
   if (!video.videoWidth || !video.videoHeight) throw new Error('Kameran öppnades men gav ingen bild.');
 
   const track = mediaStream.getVideoTracks()[0];
+  const settings = track?.getSettings?.() ?? {};
+  const activeDeviceId = settings.deviceId || deviceId;
+  if (activeDeviceId) localStorage.setItem(DEVICE_STORAGE_KEY, activeDeviceId);
+  localStorage.setItem(RESOLUTION_STORAGE_KEY, `${resolution.width}x${resolution.height}`);
+  await refreshCameraList(activeDeviceId);
+
   const label = track?.label ? ` · ${track.label}` : '';
   if (placeholder) placeholder.hidden = true;
   if (captureButton) captureButton.disabled = false;
   if (newPassButton) newPassButton.disabled = false;
+  if (startButton) {
+    startButton.disabled = false;
+    startButton.textContent = 'Starta om vald kamera';
+  }
   setStatus(`Kamera klar · ${video.videoWidth}×${video.videoHeight}${label}`);
   window.dispatchEvent(new CustomEvent('timberscanner:camera-ready', {
-    detail: { width: video.videoWidth, height: video.videoHeight, label: track?.label ?? '' },
+    detail: { width: video.videoWidth, height: video.videoHeight, label: track?.label ?? '', deviceId: activeDeviceId },
   }));
 }
 
@@ -142,15 +177,25 @@ async function activateCamera(source = 'program') {
   }
 }
 
+async function restartForSelectionChange() {
+  if (deviceSelect) localStorage.setItem(DEVICE_STORAGE_KEY, deviceSelect.value);
+  if (resolutionSelect) localStorage.setItem(RESOLUTION_STORAGE_KEY, resolutionSelect.value);
+  if (window.__timberCameraStream) await activateCamera('kameraval ändrat');
+}
+
 window.TimberCamera = Object.freeze({
   start: () => activateCamera('api'),
+  refreshDevices: () => refreshCameraList(),
   isReady: () => Boolean(video?.videoWidth && video?.videoHeight),
   getStream: () => window.__timberCameraStream ?? null,
   stop: () => {
     stopStream(window.__timberCameraStream);
     window.__timberCameraStream = null;
     if (video) video.srcObject = null;
-    if (startButton) startButton.disabled = false;
+    if (startButton) {
+      startButton.disabled = false;
+      startButton.textContent = 'Starta vald kamera';
+    }
     if (captureButton) captureButton.disabled = true;
     if (newPassButton) newPassButton.disabled = true;
     if (placeholder) {
@@ -161,5 +206,16 @@ window.TimberCamera = Object.freeze({
   },
 });
 
-setStatus(`Kameramodul v20260728-26 redo · källa: ${isUsbMode() ? 'USB' : 'mobil'} · säker anslutning: ${window.isSecureContext ? 'ja' : 'nej'}`);
+if (resolutionSelect) {
+  const savedResolution = localStorage.getItem(RESOLUTION_STORAGE_KEY);
+  if (savedResolution && [...resolutionSelect.options].some((option) => option.value === savedResolution)) {
+    resolutionSelect.value = savedResolution;
+  }
+  resolutionSelect.addEventListener('change', () => restartForSelectionChange().catch(console.error));
+}
+if (deviceSelect) deviceSelect.addEventListener('change', () => restartForSelectionChange().catch(console.error));
+navigator.mediaDevices?.addEventListener?.('devicechange', () => refreshCameraList().catch(console.error));
+refreshCameraList().catch(console.error);
+
+setStatus(`Kameramodul v20260728-28 redo · källa: ${isUsbMode() ? 'USB' : 'mobil'} · säker anslutning: ${window.isSecureContext ? 'ja' : 'nej'}`);
 window.addEventListener('pagehide', () => window.TimberCamera?.stop());
