@@ -13,7 +13,7 @@ let workerReady = false;
 
 function workerUrl() {
   const url = new URL('./orb-worker.js', import.meta.url);
-  url.searchParams.set('v', '20260728-18');
+  url.searchParams.set('v', '20260728-19');
   return url;
 }
 
@@ -36,20 +36,18 @@ function ensureWorker() {
       detail.textContent = `Worker redo · version ${message.version}`;
       return;
     }
-
     const entry = pending.get(message.id);
     if (!entry) return;
     if (message.progress) {
       const names = {
-        grayscale: 'Konverterar till gråskala',
-        corners: 'Letar hörnpunkter',
+        grayscale: 'Konverterar central bildyta till gråskala',
+        corners: 'Letar hörnpunkter i central ROI',
         matching: `Matchar ${message.keypointsA ?? 0}/${message.keypointsB ?? 0} hörnpunkter`,
-        ransac: `Geometrisk filtrering av ${message.rawMatches ?? 0} matchningar`,
+        ransac: `Affin RANSAC på ${message.rawMatches ?? 0} råa matchningar`,
       };
       detail.textContent = names[message.progress] ?? message.progress;
       return;
     }
-
     pending.delete(message.id);
     window.clearTimeout(entry.timeout);
     if (message.ok) entry.resolve(message.result);
@@ -76,8 +74,7 @@ function imageData(image, maxWidth = 320) {
   work.height = Math.max(120, Math.round(image.naturalHeight * scale));
   const context = work.getContext('2d', { willReadFrequently: true });
   context.drawImage(image, 0, 0, work.width, work.height);
-  const data = context.getImageData(0, 0, work.width, work.height);
-  return { canvas: work, data };
+  return { canvas: work, data: context.getImageData(0, 0, work.width, work.height) };
 }
 
 function requestMatch(left, right) {
@@ -135,15 +132,10 @@ async function matchPair(firstFigure, secondFigure) {
   if (!firstImage?.naturalWidth || !secondImage?.naturalWidth) throw new Error('Bildparet är inte färdigavkodat');
   const left = imageData(firstImage);
   const right = imageData(secondImage);
-  drawPair(left.canvas, right.canvas, [], 'Bildparet är skickat till Web Worker');
+  drawPair(left.canvas, right.canvas, [], 'Central ROI skickad till Web Worker');
   detail.textContent = `Skickar ${left.data.width}×${left.data.height} och ${right.data.width}×${right.data.height}`;
   const result = await requestMatch(left, right);
-  drawPair(
-    left.canvas,
-    right.canvas,
-    result.points,
-    `${result.matches}/${result.rawMatches} geometriska inliers · ${result.inlierRatio}%`,
-  );
+  drawPair(left.canvas, right.canvas, result.points, `${result.matches}/${result.rawMatches} affina inliers · ${result.inlierRatio}%`);
   return result;
 }
 
@@ -157,22 +149,24 @@ registerAnalysisStage({
       detail.textContent = 'Skärpeanalys och bildurval måste bli klara först';
       return;
     }
-
     for (let index = 1; index < figures.length; index += 1) {
       const first = figures[index - 1];
       const second = figures[index];
       const pairId = `${first.dataset.captureId}|${second.dataset.captureId}`;
       if (processedPairs.has(pairId)) continue;
-
       status.textContent = `Matchar valt bildpar ${index}/${figures.length - 1}…`;
       detail.textContent = workerReady ? 'Worker redo' : 'Startar worker…';
       try {
         const result = await matchPair(first, second);
         processedPairs.add(pairId);
         results.push({ pairId, ...result });
-        const stable = result.matches >= 12 && result.inlierRatio >= 35;
-        status.textContent = stable ? 'Geometriskt stabil matchning' : 'Geometriskt svag matchning';
-        detail.textContent = `${result.matches}/${result.rawMatches} inliers (${result.inlierRatio}%) · förskjutning ${result.motion.dx}, ${result.motion.dy} px`;
+        const stable = result.matches >= 10 && result.inlierRatio >= 30 && result.meanError <= 4.5;
+        status.textContent = stable ? 'Affint stabil matchning' : 'Affint svag matchning';
+        const motion = result.motion;
+        const motionText = motion
+          ? `rotation ${motion.rotation}° · skala ${motion.scale} · förskjutning ${motion.tx}, ${motion.ty} px`
+          : 'ingen stabil affin modell';
+        detail.textContent = `${result.matches}/${result.rawMatches} inliers (${result.inlierRatio}%) · fel ${result.meanError}px · ${motionText}`;
         window.dispatchEvent(new CustomEvent('timberscanner:pair-matched', { detail: { pairId, ...result } }));
       } catch (error) {
         status.textContent = 'Bildmatchningen misslyckades';
@@ -182,10 +176,9 @@ registerAnalysisStage({
       await new Promise((resolve) => window.setTimeout(resolve, 350));
       return;
     }
-
     if (results.length) {
-      const usable = results.filter((item) => item.matches >= 12 && item.inlierRatio >= 35).length;
-      status.textContent = `Bildmatchning klar: ${usable}/${results.length} geometriskt stabila par`;
+      const usable = results.filter((item) => item.matches >= 10 && item.inlierRatio >= 30 && item.meanError <= 4.5).length;
+      status.textContent = `Bildmatchning klar: ${usable}/${results.length} affint stabila par`;
       detail.textContent = 'Pose och triangulering är fortfarande avstängda';
     }
   },
