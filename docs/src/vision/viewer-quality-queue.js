@@ -10,6 +10,7 @@ const signatureById = new Map();
 const DUPLICATE_DISTANCE = 8;
 let running = false;
 let scheduled = false;
+let lastSelectionSignature = '';
 
 function updateCount() {
   if (analysisCount) analysisCount.textContent = String(analysed.size);
@@ -19,14 +20,8 @@ function waitForImage(image) {
   if (image.complete && image.naturalWidth > 0) return Promise.resolve();
   return new Promise((resolve, reject) => {
     const timeout = window.setTimeout(() => reject(new Error('Bildavkodningen tog för lång tid')), 15000);
-    image.addEventListener('load', () => {
-      window.clearTimeout(timeout);
-      resolve();
-    }, { once: true });
-    image.addEventListener('error', () => {
-      window.clearTimeout(timeout);
-      reject(new Error('Bilden kunde inte avkodas'));
-    }, { once: true });
+    image.addEventListener('load', () => { window.clearTimeout(timeout); resolve(); }, { once: true });
+    image.addEventListener('error', () => { window.clearTimeout(timeout); reject(new Error('Bilden kunde inte avkodas')); }, { once: true });
   });
 }
 
@@ -57,9 +52,7 @@ function signatureDistance(left, right) {
 function baseCaption(figure) {
   const caption = figure.querySelector('figcaption');
   if (!caption) return '';
-  if (!caption.dataset.baseCaption) {
-    caption.dataset.baseCaption = caption.textContent.replace(/ · Analys avstängd$/, '');
-  }
+  if (!caption.dataset.baseCaption) caption.dataset.baseCaption = caption.textContent.replace(/ · Analys avstängd$/, '');
   return caption.dataset.baseCaption;
 }
 
@@ -72,31 +65,27 @@ function applySelection() {
     const id = figure.dataset.captureId;
     const quality = qualityById.get(id);
     const signature = signatureById.get(id);
+    figure.dataset.selected = 'false';
     if (!quality || !signature) continue;
-
     if (quality.sharpness === 'blurry') {
       figure.dataset.selection = 'rejected-blurry';
       continue;
     }
 
     const previous = selected.at(-1);
-    if (!previous) {
+    if (!previous || signatureDistance(previous.signature, signature) >= DUPLICATE_DISTANCE) {
       selected.push({ figure, id, quality, signature });
       figure.dataset.selection = 'selected';
-      continue;
-    }
-
-    const distance = signatureDistance(previous.signature, signature);
-    if (distance >= DUPLICATE_DISTANCE) {
-      selected.push({ figure, id, quality, signature });
-      figure.dataset.selection = 'selected';
+      figure.dataset.selected = 'true';
       continue;
     }
 
     if (quality.sharpnessScore > previous.quality.sharpnessScore) {
       previous.figure.dataset.selection = 'rejected-duplicate';
+      previous.figure.dataset.selected = 'false';
       selected[selected.length - 1] = { figure, id, quality, signature };
       figure.dataset.selection = 'selected';
+      figure.dataset.selected = 'true';
     } else {
       figure.dataset.selection = 'rejected-duplicate';
     }
@@ -111,35 +100,32 @@ function applySelection() {
     figure.className = `quality-${quality.sharpness}`;
     figure.style.opacity = selection === 'selected' ? '1' : '0.42';
     figure.style.outline = selection === 'selected' ? '3px solid rgba(70,180,100,.75)' : 'none';
-    const selectionText = selection === 'selected'
-      ? 'Vald för analys'
-      : selection === 'rejected-blurry'
-        ? 'Bortvald: oskarp'
-        : 'Bortvald: nästan identisk';
+    const selectionText = selection === 'selected' ? 'Vald för analys' : selection === 'rejected-blurry' ? 'Bortvald: oskarp' : 'Bortvald: nästan identisk';
     if (caption) caption.textContent = `${baseCaption(figure)} · ${describeSharpness(quality)} · ${selectionText}`;
   }
 
   if (storageStatus) storageStatus.textContent = `Urval ${selected.length}/${qualityById.size}`;
-  window.dispatchEvent(new CustomEvent('timberscanner:image-selection', {
-    detail: { selectedIds: selected.map((item) => item.id), analysed: qualityById.size },
-  }));
+  const selectedIds = selected.map((item) => item.id);
+  const signature = selectedIds.join('|');
+  window.dispatchEvent(new CustomEvent('timberscanner:image-selection', { detail: { selectedIds, analysed: qualityById.size } }));
+  if (signature !== lastSelectionSignature) {
+    lastSelectionSignature = signature;
+    window.dispatchEvent(new CustomEvent('timberscanner:selection-updated', { detail: { selectedIds, analysed: qualityById.size } }));
+  }
 }
 
 async function analyseFigure(figure) {
   const id = figure.dataset.captureId;
   if (!id || analysed.has(id)) return;
-
   const image = figure.querySelector('img');
   if (!image) return;
   await waitForImage(image);
-
   const maxWidth = 960;
   const scale = Math.min(1, maxWidth / image.naturalWidth);
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
   canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
   canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
-
   const quality = analyseCanvasQuality(canvas);
   analysed.add(id);
   qualityById.set(id, quality);
@@ -152,18 +138,13 @@ async function runQueue() {
   scheduled = false;
   if (running || !captures) return;
   running = true;
-
   try {
     while (true) {
-      const pending = [...captures.querySelectorAll('figure[data-capture-id]')]
-        .reverse()
-        .find((figure) => !analysed.has(figure.dataset.captureId));
+      const pending = [...captures.querySelectorAll('figure[data-capture-id]')].reverse().find((figure) => !analysed.has(figure.dataset.captureId));
       if (!pending) break;
-
       if (storageStatus) storageStatus.textContent = `Analyserar ${analysed.size + 1}`;
-      try {
-        await analyseFigure(pending);
-      } catch (error) {
+      try { await analyseFigure(pending); }
+      catch (error) {
         const id = pending.dataset.captureId;
         if (id) analysed.add(id);
         const caption = pending.querySelector('figcaption');
@@ -171,7 +152,6 @@ async function runQueue() {
         console.error('Sekventiell bildanalys misslyckades', error);
         updateCount();
       }
-
       await new Promise((resolve) => window.setTimeout(resolve, 250));
     }
   } finally {
