@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#17351f">
   <title>TimberScanner</title>
-  <link rel="stylesheet" href="styles.css?v=20260728-27">
+  <link rel="stylesheet" href="styles.css?v=20260728-28">
   <script type="importmap">
     {
       "imports": {
-        "./src/transfer/cloud-relay.js": "./src/transfer/cloud-relay.js?v=20260728-27"
+        "./src/transfer/cloud-relay.js": "./src/transfer/cloud-relay.js?v=20260728-28"
       }
     }
   </script>
@@ -48,7 +48,7 @@
       <section class="work-toolbar panel">
         <div>
           <strong id="work-status">USB-kamera</strong>
-          <span id="work-detail">Starta kameran och ta bildrutor</span>
+          <span id="work-detail">Välj kamera, starta den och ta bildrutor</span>
         </div>
         <button id="show-pairing" class="secondary">Mobilkamera</button>
       </section>
@@ -60,6 +60,20 @@
           <div id="camera-placeholder">Kameran är inte startad</div>
         </section>
         <p class="panel"><strong>Kamera:</strong> <span id="camera-status">Kameramodulen laddas…</span></p>
+
+        <section class="settings-card">
+          <label for="camera-device">Kamera</label>
+          <select id="camera-device">
+            <option value="">Webbläsarens standardkamera</option>
+          </select>
+          <label for="camera-resolution">Upplösning</label>
+          <select id="camera-resolution">
+            <option value="1280x720" selected>1280 × 720</option>
+            <option value="1920x1080">1920 × 1080</option>
+            <option value="640x480">640 × 480</option>
+          </select>
+          <small id="camera-selection-help">Kameranamnen visas efter att webbläsaren fått kameraåtkomst.</small>
+        </section>
 
         <section class="scan-controller panel">
           <div>
@@ -74,7 +88,7 @@
         </section>
 
         <section class="controls">
-          <button id="start-camera" type="button">Starta USB-kamera</button>
+          <button id="start-camera" type="button">Starta vald kamera</button>
           <button id="capture" disabled>Ta bild manuellt</button>
           <button id="new-pass" disabled>Ny rotation</button>
           <button id="export" class="secondary" disabled>Exportera reservkopia</button>
@@ -131,6 +145,6 @@
     </section>
   </main>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script type="module" src="src/runtime/mode-loader.js?v=20260728-27"></script>
+  <script type="module" src="src/runtime/mode-loader.js?v=20260728-28"></script>
 </body>
 </html>
