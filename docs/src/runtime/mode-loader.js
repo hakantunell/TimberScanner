@@ -1,4 +1,4 @@
-const VERSION = '20260728-34';
+const VERSION = '20260728-35';
 const params = new URLSearchParams(window.location.search);
 const mobileMode = params.get('mode') === 'capture' || params.get('mode') === 'mobile';
 
@@ -19,8 +19,10 @@ if (mobileMode) {
   await load('../capture/camera-button-fix.js');
   await load('../scanning/auto-capture.js');
   await load('../vision/analysis-pipeline.js');
+  await load('../vision/worker-roi-hook.js');
   await load('../vision/sequential-feature-matching.js');
   await load('../vision/match-classification-normalizer.js');
+  await load('../vision/roi-overlay.js');
   await load('../vision/chain-repair-and-cloud.js');
   await load('../vision/viewer-quality-queue.js');
 }
