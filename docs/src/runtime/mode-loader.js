@@ -1,4 +1,4 @@
-const VERSION = '20260728-35';
+const VERSION = '20260728-36';
 const params = new URLSearchParams(window.location.search);
 const mobileMode = params.get('mode') === 'capture' || params.get('mode') === 'mobile';
 
@@ -7,13 +7,11 @@ async function load(path) {
 }
 
 if (mobileMode) {
-  // Det befintliga mobil-/Cloudflare-spåret ligger kvar för senare tester.
   await load('../../app.js');
   await load('../capture/camera-controller.js');
   await load('../capture/camera-button-fix.js');
   await load('../scanning/auto-capture.js');
 } else {
-  // Standard: USB-webbkamera och hela analyskedjan lokalt på datorn.
   await load('./usb-app.js');
   await load('../capture/camera-controller.js');
   await load('../capture/camera-button-fix.js');
