@@ -1,4 +1,4 @@
-const VERSION = '20260728-10';
+const VERSION = '20260728-11';
 const params = new URLSearchParams(window.location.search);
 const captureMode = params.get('mode') === 'capture';
 
@@ -13,7 +13,7 @@ if (captureMode) {
   await load('../capture/camera-button-fix.js');
   await load('../scanning/auto-capture.js');
 } else {
-  // Viewer: stabil överföring plus lätt, sekventiell skärpeanalys.
+  // Viewer: stabil överföring plus sekventiell skärpeanalys och bildurval.
   // OpenCV, punktmoln, bildmatchning och konturdiagnostik är fortsatt avstängda.
   await load('../debug/viewer-trace.js');
   await load('../vision/viewer-quality-queue.js');
