@@ -13,7 +13,7 @@ let workerReady = false;
 
 function workerUrl() {
   const url = new URL('./orb-worker.js', import.meta.url);
-  url.searchParams.set('v', '20260728-17');
+  url.searchParams.set('v', '20260728-18');
   return url;
 }
 
@@ -44,6 +44,7 @@ function ensureWorker() {
         grayscale: 'Konverterar till gråskala',
         corners: 'Letar hörnpunkter',
         matching: `Matchar ${message.keypointsA ?? 0}/${message.keypointsB ?? 0} hörnpunkter`,
+        ransac: `Geometrisk filtrering av ${message.rawMatches ?? 0} matchningar`,
       };
       detail.textContent = names[message.progress] ?? message.progress;
       return;
@@ -92,8 +93,7 @@ function requestMatch(left, right) {
       reject(new Error('Bildmatchningsworkern tog längre än 8 sekunder'));
     }, 8000);
     pending.set(id, { resolve, reject, timeout });
-    const activeWorker = ensureWorker();
-    activeWorker.postMessage({
+    ensureWorker().postMessage({
       id,
       type: 'match',
       payload: {
@@ -116,8 +116,8 @@ function drawPair(left, right, points = [], label = 'Förbereder matchning…') 
   context.fillRect(0, 0, width, 420);
   context.drawImage(left, 0, 0, left.width * scaleA, left.height * scaleA);
   context.drawImage(right, half, 0, right.width * scaleB, right.height * scaleB);
-  context.strokeStyle = 'rgba(244,211,94,.55)';
-  context.lineWidth = 1;
+  context.strokeStyle = 'rgba(244,211,94,.72)';
+  context.lineWidth = 1.25;
   for (const match of points) {
     context.beginPath();
     context.moveTo(match.a.x * scaleA, match.a.y * scaleA);
@@ -138,7 +138,12 @@ async function matchPair(firstFigure, secondFigure) {
   drawPair(left.canvas, right.canvas, [], 'Bildparet är skickat till Web Worker');
   detail.textContent = `Skickar ${left.data.width}×${left.data.height} och ${right.data.width}×${right.data.height}`;
   const result = await requestMatch(left, right);
-  drawPair(left.canvas, right.canvas, result.points, `${result.matches} lokala detaljmatchningar · Web Worker`);
+  drawPair(
+    left.canvas,
+    right.canvas,
+    result.points,
+    `${result.matches}/${result.rawMatches} geometriska inliers · ${result.inlierRatio}%`,
+  );
   return result;
 }
 
@@ -165,8 +170,9 @@ registerAnalysisStage({
         const result = await matchPair(first, second);
         processedPairs.add(pairId);
         results.push({ pairId, ...result });
-        status.textContent = result.matches >= 20 ? 'Stabil bildmatchning' : 'Svag bildmatchning';
-        detail.textContent = `${result.matches} matchningar · ${result.keypointsA}/${result.keypointsB} hörnpunkter`;
+        const stable = result.matches >= 12 && result.inlierRatio >= 35;
+        status.textContent = stable ? 'Geometriskt stabil matchning' : 'Geometriskt svag matchning';
+        detail.textContent = `${result.matches}/${result.rawMatches} inliers (${result.inlierRatio}%) · förskjutning ${result.motion.dx}, ${result.motion.dy} px`;
         window.dispatchEvent(new CustomEvent('timberscanner:pair-matched', { detail: { pairId, ...result } }));
       } catch (error) {
         status.textContent = 'Bildmatchningen misslyckades';
@@ -178,8 +184,8 @@ registerAnalysisStage({
     }
 
     if (results.length) {
-      const usable = results.filter((item) => item.matches >= 20).length;
-      status.textContent = `Bildmatchning klar: ${usable}/${results.length} användbara par`;
+      const usable = results.filter((item) => item.matches >= 12 && item.inlierRatio >= 35).length;
+      status.textContent = `Bildmatchning klar: ${usable}/${results.length} geometriskt stabila par`;
       detail.textContent = 'Pose och triangulering är fortfarande avstängda';
     }
   },
