@@ -57,6 +57,55 @@ function patchDistance(grayA, widthA, pointA, grayB, widthB, pointB, radius = 2)
   return total / count;
 }
 
+function median(values) {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function geometricFilter(matches, iterations = 100, threshold = 5) {
+  if (matches.length < 3) {
+    return { inliers: matches, model: { dx: 0, dy: 0 }, ratio: matches.length ? 1 : 0 };
+  }
+
+  let best = [];
+  let bestDx = 0;
+  let bestDy = 0;
+
+  for (let iteration = 0; iteration < iterations; iteration += 1) {
+    const seed = matches[Math.floor(Math.random() * matches.length)];
+    const dx = seed.b.x - seed.a.x;
+    const dy = seed.b.y - seed.a.y;
+    const inliers = matches.filter((match) => {
+      const errorX = (match.b.x - match.a.x) - dx;
+      const errorY = (match.b.y - match.a.y) - dy;
+      return Math.hypot(errorX, errorY) <= threshold;
+    });
+    if (inliers.length > best.length) {
+      best = inliers;
+      bestDx = dx;
+      bestDy = dy;
+    }
+  }
+
+  if (best.length >= 3) {
+    bestDx = median(best.map((match) => match.b.x - match.a.x));
+    bestDy = median(best.map((match) => match.b.y - match.a.y));
+    best = matches.filter((match) => {
+      const errorX = (match.b.x - match.a.x) - bestDx;
+      const errorY = (match.b.y - match.a.y) - bestDy;
+      return Math.hypot(errorX, errorY) <= threshold;
+    });
+  }
+
+  return {
+    inliers: best,
+    model: { dx: Math.round(bestDx * 10) / 10, dy: Math.round(bestDy * 10) / 10 },
+    ratio: matches.length ? best.length / matches.length : 0,
+  };
+}
+
 function matchFeatures(id, left, right) {
   self.postMessage({ id, progress: 'grayscale' });
   const grayA = toGray(left);
@@ -92,16 +141,23 @@ function matchFeatures(id, left, right) {
   }
 
   accepted.sort((leftMatch, rightMatch) => leftMatch.distance - rightMatch.distance);
+  self.postMessage({ id, progress: 'ransac', rawMatches: accepted.length });
+  const filtered = geometricFilter(accepted);
+
   return {
     keypointsA: pointsA.length,
     keypointsB: pointsB.length,
-    matches: accepted.length,
-    points: accepted.slice(0, 100),
-    algorithm: 'gradient-corners-patch-sad-v2',
+    rawMatches: accepted.length,
+    matches: filtered.inliers.length,
+    inlierRatio: Math.round(filtered.ratio * 100),
+    motion: filtered.model,
+    points: filtered.inliers.slice(0, 100),
+    rawPoints: accepted.slice(0, 100),
+    algorithm: 'gradient-corners-patch-sad-ransac-translation-v1',
   };
 }
 
-self.postMessage({ type: 'ready', version: '20260728-17' });
+self.postMessage({ type: 'ready', version: '20260728-18' });
 
 self.addEventListener('message', (event) => {
   const { id, type, payload } = event.data ?? {};
