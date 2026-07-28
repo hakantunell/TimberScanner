@@ -1,110 +1,103 @@
-let cvReadyPromise = null;
-
-function ensureOpenCv() {
-  if (cvReadyPromise) return cvReadyPromise;
-  cvReadyPromise = new Promise((resolve, reject) => {
-    try {
-      importScripts('https://docs.opencv.org/4.x/opencv.js');
-    } catch (error) {
-      reject(new Error(`OpenCV kunde inte laddas i worker: ${error.message}`));
-      return;
-    }
-
-    const started = Date.now();
-    const poll = () => {
-      const candidate = self.cv;
-      if (candidate?.Mat && candidate?.ORB && candidate?.BFMatcher) {
-        resolve(candidate);
-        return;
-      }
-      if (candidate instanceof Promise) {
-        candidate.then(resolve).catch(reject);
-        return;
-      }
-      if (Date.now() - started > 30000) {
-        reject(new Error('OpenCV initierades inte i worker'));
-        return;
-      }
-      setTimeout(poll, 100);
-    };
-    poll();
-  });
-  return cvReadyPromise;
+function toGray(image) {
+  const rgba = new Uint8Array(image.buffer);
+  const gray = new Uint8Array(image.width * image.height);
+  for (let index = 0; index < gray.length; index += 1) {
+    const offset = index * 4;
+    gray[index] = Math.round((rgba[offset] * 0.299) + (rgba[offset + 1] * 0.587) + (rgba[offset + 2] * 0.114));
+  }
+  return gray;
 }
 
-function point(vector, index) {
-  const item = vector.get(index);
-  return { x: item.pt.x, y: item.pt.y };
-}
-
-function matFromImageData(cv, image) {
-  const mat = new cv.Mat(image.height, image.width, cv.CV_8UC4);
-  mat.data.set(new Uint8Array(image.buffer));
-  return mat;
-}
-
-async function matchPair(payload) {
-  const cv = await ensureOpenCv();
-  const rgbaA = matFromImageData(cv, payload.left);
-  const rgbaB = matFromImageData(cv, payload.right);
-  const grayA = new cv.Mat();
-  const grayB = new cv.Mat();
-  const keyA = new cv.KeyPointVector();
-  const keyB = new cv.KeyPointVector();
-  const descA = new cv.Mat();
-  const descB = new cv.Mat();
-  const mask = new cv.Mat();
-  const orb = new cv.ORB(700);
-  const matcher = new cv.BFMatcher(cv.NORM_HAMMING, false);
-  const knn = new cv.DMatchVectorVector();
-  const resources = [rgbaA, rgbaB, grayA, grayB, keyA, keyB, descA, descB, mask, orb, matcher, knn];
-
-  try {
-    cv.cvtColor(rgbaA, grayA, cv.COLOR_RGBA2GRAY);
-    cv.cvtColor(rgbaB, grayB, cv.COLOR_RGBA2GRAY);
-    orb.detectAndCompute(grayA, mask, keyA, descA);
-    orb.detectAndCompute(grayB, mask, keyB, descB);
-    if (descA.empty() || descB.empty()) throw new Error('För få bilddetaljer');
-
-    matcher.knnMatch(descA, descB, knn, 2);
-    const accepted = [];
-    for (let i = 0; i < knn.size(); i += 1) {
-      const pair = knn.get(i);
-      try {
-        if (pair.size() >= 2) {
-          const best = pair.get(0);
-          const second = pair.get(1);
-          if (best.distance < second.distance * 0.72 && best.distance < 72) {
-            accepted.push({
-              a: point(keyA, best.queryIdx),
-              b: point(keyB, best.trainIdx),
-              distance: best.distance,
-            });
-          }
-        }
-      } finally {
-        pair.delete();
-      }
-    }
-    accepted.sort((left, right) => left.distance - right.distance);
-    return {
-      keypointsA: keyA.size(),
-      keypointsB: keyB.size(),
-      matches: accepted.length,
-      points: accepted.slice(0, 100),
-    };
-  } finally {
-    for (const resource of resources.reverse()) {
-      try { resource.delete(); } catch { /* best effort */ }
+function detectCorners(gray, width, height, limit = 220) {
+  const candidates = [];
+  const margin = 8;
+  for (let y = margin; y < height - margin; y += 3) {
+    for (let x = margin; x < width - margin; x += 3) {
+      const index = (y * width) + x;
+      const gx = Math.abs(gray[index + 1] - gray[index - 1]);
+      const gy = Math.abs(gray[index + width] - gray[index - width]);
+      const diagonal = Math.abs(gray[index + width + 1] - gray[index - width - 1]);
+      const score = gx + gy + Math.round(diagonal * 0.5);
+      if (score >= 42) candidates.push({ x, y, score });
     }
   }
+  candidates.sort((left, right) => right.score - left.score);
+
+  const selected = [];
+  const minDistanceSquared = 9 * 9;
+  for (const candidate of candidates) {
+    if (selected.every((point) => {
+      const dx = point.x - candidate.x;
+      const dy = point.y - candidate.y;
+      return (dx * dx) + (dy * dy) >= minDistanceSquared;
+    })) {
+      selected.push(candidate);
+      if (selected.length >= limit) break;
+    }
+  }
+  return selected;
 }
 
-self.addEventListener('message', async (event) => {
+function patchDistance(grayA, widthA, pointA, grayB, widthB, pointB, radius = 3) {
+  let total = 0;
+  let count = 0;
+  for (let dy = -radius; dy <= radius; dy += 1) {
+    for (let dx = -radius; dx <= radius; dx += 1) {
+      const a = grayA[((pointA.y + dy) * widthA) + pointA.x + dx];
+      const b = grayB[((pointB.y + dy) * widthB) + pointB.x + dx];
+      total += Math.abs(a - b);
+      count += 1;
+    }
+  }
+  return total / count;
+}
+
+function matchFeatures(left, right) {
+  const grayA = toGray(left);
+  const grayB = toGray(right);
+  const pointsA = detectCorners(grayA, left.width, left.height);
+  const pointsB = detectCorners(grayB, right.width, right.height);
+  const accepted = [];
+  const maxShiftX = Math.round(Math.max(left.width, right.width) * 0.28);
+  const maxShiftY = Math.round(Math.max(left.height, right.height) * 0.18);
+
+  for (const pointA of pointsA) {
+    let best = null;
+    let second = null;
+    for (const pointB of pointsB) {
+      if (Math.abs(pointA.x - pointB.x) > maxShiftX || Math.abs(pointA.y - pointB.y) > maxShiftY) continue;
+      const distance = patchDistance(grayA, left.width, pointA, grayB, right.width, pointB);
+      if (!best || distance < best.distance) {
+        second = best;
+        best = { point: pointB, distance };
+      } else if (!second || distance < second.distance) {
+        second = { point: pointB, distance };
+      }
+    }
+    if (best && second && best.distance < 32 && best.distance < second.distance * 0.82) {
+      accepted.push({
+        a: { x: pointA.x, y: pointA.y },
+        b: { x: best.point.x, y: best.point.y },
+        distance: Math.round(best.distance * 10) / 10,
+      });
+    }
+  }
+
+  accepted.sort((leftMatch, rightMatch) => leftMatch.distance - rightMatch.distance);
+  return {
+    keypointsA: pointsA.length,
+    keypointsB: pointsB.length,
+    matches: accepted.length,
+    points: accepted.slice(0, 100),
+    algorithm: 'gradient-corners-patch-sad-v1',
+  };
+}
+
+self.addEventListener('message', (event) => {
   const { id, type, payload } = event.data ?? {};
   if (type !== 'match') return;
   try {
-    const result = await matchPair(payload);
+    const result = matchFeatures(payload.left, payload.right);
     self.postMessage({ id, ok: true, result });
   } catch (error) {
     self.postMessage({ id, ok: false, error: error instanceof Error ? error.message : String(error) });
