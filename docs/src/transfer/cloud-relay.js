@@ -4,7 +4,7 @@ const DEFAULT_TIMEOUT_MS = 12000;
 function defaultApiBase() {
   const hostname = window.location.hostname;
   const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
-  return isLocal ? LOCAL_API_BASE : '/sync';
+  return isLocal ? LOCAL_API_BASE : '/timber-sync';
 }
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
@@ -35,6 +35,14 @@ async function parseResponse(response) {
 export class CloudRelay {
   constructor({ apiBase = defaultApiBase() } = {}) {
     this.apiBase = apiBase.replace(/\/$/, '');
+    this.localDirect = this.apiBase === LOCAL_API_BASE;
+  }
+
+  sessionBase(sessionId) {
+    const id = encodeURIComponent(sessionId);
+    return this.localDirect
+      ? `${this.apiBase}/sessions/${id}`
+      : `${this.apiBase}/session/${id}`;
   }
 
   async health() {
@@ -43,16 +51,20 @@ export class CloudRelay {
 
   async createSession() {
     const nonce = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+    const url = this.localDirect
+      ? `${this.apiBase}/sessions`
+      : `${this.apiBase}/start?nonce=${encodeURIComponent(nonce)}`;
     return parseResponse(await fetchWithTimeout(
-      `${this.apiBase}/open?nonce=${encodeURIComponent(nonce)}`,
-      { method: 'GET', cache: 'no-store' },
+      url,
+      { method: this.localDirect ? 'POST' : 'GET', cache: 'no-store' },
       12000,
     ));
   }
 
   async markConnected(remoteSession) {
+    const suffix = this.localDirect ? 'connected' : 'ready';
     return parseResponse(await fetchWithTimeout(
-      `${this.apiBase}/link/${encodeURIComponent(remoteSession.sessionId)}/ready`,
+      `${this.sessionBase(remoteSession.sessionId)}/${suffix}`,
       {
         method: 'POST',
         headers: { 'x-upload-token': remoteSession.uploadToken },
@@ -65,7 +77,7 @@ export class CloudRelay {
     if (remoteSession.viewToken) headers['x-view-token'] = remoteSession.viewToken;
     else headers['x-upload-token'] = remoteSession.uploadToken;
     return parseResponse(await fetchWithTimeout(
-      `${this.apiBase}/link/${encodeURIComponent(remoteSession.sessionId)}/frames`,
+      `${this.sessionBase(remoteSession.sessionId)}/images`,
       { method: 'DELETE', headers },
     ));
   }
@@ -78,7 +90,7 @@ export class CloudRelay {
       height: String(capture.height),
     });
     return parseResponse(await fetchWithTimeout(
-      `${this.apiBase}/link/${encodeURIComponent(remoteSession.sessionId)}/frames/${encodeURIComponent(capture.id)}?${query}`,
+      `${this.sessionBase(remoteSession.sessionId)}/images/${encodeURIComponent(capture.id)}?${query}`,
       {
         method: 'PUT',
         headers: {
@@ -93,13 +105,13 @@ export class CloudRelay {
 
   async listImages(remoteSession) {
     return parseResponse(await fetchWithTimeout(
-      `${this.apiBase}/link/${encodeURIComponent(remoteSession.sessionId)}/frames`,
+      `${this.sessionBase(remoteSession.sessionId)}/images`,
       { headers: { 'x-view-token': remoteSession.viewToken }, cache: 'no-store' },
     ));
   }
 
   async downloadImage(remoteSession, imageId) {
-    const url = `${this.apiBase}/link/${encodeURIComponent(remoteSession.sessionId)}/frames/${encodeURIComponent(imageId)}`;
+    const url = `${this.sessionBase(remoteSession.sessionId)}/images/${encodeURIComponent(imageId)}`;
     const response = await fetchWithTimeout(
       url,
       { headers: { 'x-view-token': remoteSession.viewToken }, cache: 'no-store' },
@@ -115,7 +127,7 @@ export class CloudRelay {
 
   async deleteSession(remoteSession) {
     return parseResponse(await fetchWithTimeout(
-      `${this.apiBase}/link/${encodeURIComponent(remoteSession.sessionId)}`,
+      this.sessionBase(remoteSession.sessionId),
       { method: 'DELETE', headers: { 'x-view-token': remoteSession.viewToken } },
     ));
   }
