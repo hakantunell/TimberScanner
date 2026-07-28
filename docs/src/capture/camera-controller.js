@@ -6,7 +6,6 @@ const placeholder = document.querySelector('#camera-placeholder');
 const status = document.querySelector('#camera-status');
 
 let starting = false;
-let lastActivationAt = 0;
 
 function setStatus(message) {
   if (status) status.textContent = message;
@@ -15,38 +14,40 @@ function setStatus(message) {
 
 function describeCameraError(error) {
   const name = error?.name ?? 'Error';
-  if (!window.isSecureContext) return 'Kameran kräver HTTPS. Öppna appen via https://timberscanner.tunell.org.';
+  if (!window.isSecureContext) return 'Kameran kräver HTTPS.';
   if (name === 'NotAllowedError' || name === 'SecurityError') {
-    return 'Kameraåtkomst nekades. Tillåt kamera för timberscanner.tunell.org i webbläsarens webbplatsinställningar och försök igen.';
+    return 'Kameraåtkomst nekades. Öppna Safari-inställningar för timberscanner.tunell.org och välj Tillåt kamera.';
   }
-  if (name === 'NotFoundError' || name === 'DevicesNotFoundError') return 'Ingen kamera hittades på enheten.';
-  if (name === 'NotReadableError' || name === 'TrackStartError') return 'Kameran används av en annan app eller kunde inte öppnas. Stäng andra kameraappar och försök igen.';
-  if (name === 'OverconstrainedError') return 'Telefonen accepterade inte önskad kameraupplösning.';
-  if (name === 'AbortError') return 'Kamerastarten avbröts. Försök igen.';
+  if (name === 'NotFoundError') return 'Ingen kamera hittades.';
+  if (name === 'NotReadableError') return 'Kameran används av en annan app eller kunde inte öppnas.';
+  if (name === 'CameraTimeoutError') return 'Safari svarade inte på kameraförfrågan inom 12 sekunder.';
   return `${name}: ${error?.message || 'Okänt kamerafel'}`;
+}
+
+function withTimeout(promise, milliseconds) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => window.setTimeout(() => {
+      const error = new Error('Kameraförfrågan tog för lång tid');
+      error.name = 'CameraTimeoutError';
+      reject(error);
+    }, milliseconds)),
+  ]);
 }
 
 async function requestCamera() {
   if (!navigator.mediaDevices?.getUserMedia) {
-    throw new Error('Webbläsaren saknar stöd för kameraåtkomst via getUserMedia.');
+    throw new Error('Webbläsaren saknar stöd för getUserMedia.');
   }
 
-  setStatus('Begär kameraåtkomst…');
-  let mediaStream;
-  try {
-    mediaStream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: { ideal: 'environment' },
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
-      },
+  setStatus('Begär kameraåtkomst från Safari…');
+  const mediaStream = await withTimeout(
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment' },
       audio: false,
-    });
-  } catch (firstError) {
-    if (firstError?.name !== 'OverconstrainedError') throw firstError;
-    setStatus('Försöker med telefonens standardkamera…');
-    mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-  }
+    }),
+    12000,
+  );
 
   window.__timberCameraStream?.getTracks?.().forEach((track) => track.stop());
   window.__timberCameraStream = mediaStream;
@@ -56,7 +57,7 @@ async function requestCamera() {
   video.setAttribute('playsinline', '');
   video.setAttribute('webkit-playsinline', '');
 
-  setStatus('Kameran öppnades – startar förhandsvisning…');
+  setStatus('Kameraåtkomst godkänd – startar bild…');
   await video.play();
 
   const deadline = Date.now() + 8000;
@@ -68,22 +69,18 @@ async function requestCamera() {
   if (placeholder) placeholder.hidden = true;
   if (captureButton) captureButton.disabled = false;
   if (newPassButton) newPassButton.disabled = false;
-  if (startButton) startButton.disabled = true;
   setStatus(`Kamera klar · ${video.videoWidth}×${video.videoHeight}`);
   window.dispatchEvent(new CustomEvent('timberscanner:camera-ready', {
     detail: { width: video.videoWidth, height: video.videoHeight },
   }));
 }
 
-async function activateCamera(source = 'program', event = null) {
-  event?.preventDefault?.();
-  const now = Date.now();
-  if (starting || now - lastActivationAt < 500) return;
-  lastActivationAt = now;
+async function activateCamera(source = 'program') {
+  if (starting) return;
   starting = true;
-
   if (startButton) startButton.disabled = true;
   setStatus(`Startkommando mottaget (${source})`);
+
   try {
     await requestCamera();
   } catch (error) {
@@ -94,13 +91,12 @@ async function activateCamera(source = 'program', event = null) {
       placeholder.textContent = message;
     }
     setStatus(message);
-    console.error('[camera] Kunde inte starta kameran', error);
+    console.error('[camera]', error);
   } finally {
     starting = false;
   }
 }
 
-window.startTimberCamera = () => activateCamera('global');
 window.TimberCamera = Object.freeze({
   start: () => activateCamera('api'),
   isReady: () => Boolean(video?.videoWidth && video?.videoHeight),
@@ -120,12 +116,5 @@ window.TimberCamera = Object.freeze({
   },
 });
 
-if (startButton && video) {
-  // onclick-egenskapen fungerar även när inline-script blockeras av CSP.
-  startButton.removeAttribute('onclick');
-  startButton.onclick = (event) => activateCamera('onclick-property', event);
-  startButton.addEventListener('touchend', (event) => activateCamera('touchend-reserv', event), { passive: false });
-  setStatus(`Kameramodul v20260728-4 redo · säker anslutning: ${window.isSecureContext ? 'ja' : 'nej'} · direktbindning aktiv`);
-}
-
+setStatus(`Kameramodul v20260728-6 redo · endast telefonkod laddad · säker anslutning: ${window.isSecureContext ? 'ja' : 'nej'}`);
 window.addEventListener('pagehide', () => window.TimberCamera?.stop());
