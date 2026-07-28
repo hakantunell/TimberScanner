@@ -16,10 +16,17 @@ function updateCount() {
   if (analysisCount) analysisCount.textContent = String(analysed.size);
 }
 
-function waitForImage(image) {
-  if (image.complete && image.naturalWidth > 0) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const timeout = window.setTimeout(() => reject(new Error('Bildavkodningen tog för lång tid')), 15000);
+async function waitForImage(image) {
+  if (image.complete && image.naturalWidth > 0) return;
+  if (typeof image.decode === 'function') {
+    await Promise.race([
+      image.decode(),
+      new Promise((_, reject) => window.setTimeout(() => reject(new Error('Bildavkodningen tog för lång tid')), 20000)),
+    ]);
+    if (image.naturalWidth > 0) return;
+  }
+  await new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => reject(new Error('Bildavkodningen tog för lång tid')), 20000);
     image.addEventListener('load', () => { window.clearTimeout(timeout); resolve(); }, { once: true });
     image.addEventListener('error', () => { window.clearTimeout(timeout); reject(new Error('Bilden kunde inte avkodas')); }, { once: true });
   });
@@ -52,7 +59,12 @@ function signatureDistance(left, right) {
 function baseCaption(figure) {
   const caption = figure.querySelector('figcaption');
   if (!caption) return '';
-  if (!caption.dataset.baseCaption) caption.dataset.baseCaption = caption.textContent.replace(/ · Analys avstängd$/, '');
+  if (!caption.dataset.baseCaption) {
+    caption.dataset.baseCaption = caption.textContent
+      .replace(/ · Analys väntar$/, '')
+      .replace(/ · Analys avstängd$/, '')
+      .replace(/ · Analysfel:.*$/, '');
+  }
   return caption.dataset.baseCaption;
 }
 
@@ -101,7 +113,7 @@ function applySelection() {
     figure.style.opacity = selection === 'selected' ? '1' : '0.42';
     figure.style.outline = selection === 'selected' ? '3px solid rgba(70,180,100,.75)' : 'none';
     const selectionText = selection === 'selected' ? 'Vald för analys' : selection === 'rejected-blurry' ? 'Bortvald: oskarp' : 'Bortvald: nästan identisk';
-    if (caption) caption.textContent = `${baseCaption(figure)} · ${describeSharpness(quality)} · ${selectionText}`;
+    if (caption) caption.textContent = `${baseCaption(figure)} · Analyserad · ${describeSharpness(quality)} · ${selectionText}`;
   }
 
   if (storageStatus) storageStatus.textContent = `Urval ${selected.length}/${qualityById.size}`;
@@ -148,11 +160,11 @@ async function runQueue() {
         const id = pending.dataset.captureId;
         if (id) analysed.add(id);
         const caption = pending.querySelector('figcaption');
-        if (caption) caption.textContent += ` · Analysfel: ${error.message}`;
+        if (caption) caption.textContent = `${baseCaption(pending)} · Analysfel: ${error.message}`;
         console.error('Sekventiell bildanalys misslyckades', error);
         updateCount();
       }
-      await new Promise((resolve) => window.setTimeout(resolve, 250));
+      await new Promise((resolve) => window.setTimeout(resolve, 120));
     }
   } finally {
     running = false;
@@ -163,7 +175,7 @@ async function runQueue() {
 function scheduleQueue() {
   if (scheduled) return;
   scheduled = true;
-  window.setTimeout(runQueue, 500);
+  window.setTimeout(runQueue, 250);
 }
 
 if (captures) {
