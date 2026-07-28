@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#17351f">
   <title>TimberScanner</title>
-  <link rel="stylesheet" href="styles.css?v=20260728-15">
+  <link rel="stylesheet" href="styles.css?v=20260728-16">
   <script type="importmap">
     {
       "imports": {
-        "./src/transfer/cloud-relay.js": "./src/transfer/cloud-relay.js?v=20260728-15"
+        "./src/transfer/cloud-relay.js": "./src/transfer/cloud-relay.js?v=20260728-16"
       }
     }
   </script>
@@ -104,11 +104,11 @@
 
       <section id="feature-matching" class="diagnostic-panel" hidden>
         <div class="diagnostic-heading">
-          <div><p class="eyebrow">Analyspipeline</p><h2>Bildmatchning i Web Worker</h2></div>
+          <div><p class="eyebrow">Analyspipeline</p><h2>Lokal bildmatchning i Web Worker</h2></div>
           <div><strong id="feature-match-status">Väntar på två valda bilder</strong><span id="feature-match-detail">Ingen jämförelse ännu</span></div>
         </div>
         <div class="diagnostic-canvas-wrap"><canvas id="feature-match-canvas"></canvas></div>
-        <p class="diagnostic-note">Ett valt bildpar behandlas åt gången i en separat workertråd. Pose och punktmoln är avstängda.</p>
+        <p class="diagnostic-note">Ett valt bildpar behandlas åt gången lokalt i en separat workertråd. Pose och punktmoln är avstängda.</p>
       </section>
 
       <section id="contour-diagnostics" class="diagnostic-panel" hidden>
@@ -131,6 +131,6 @@
     </section>
   </main>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script type="module" src="src/runtime/mode-loader.js?v=20260728-15"></script>
+  <script type="module" src="src/runtime/mode-loader.js?v=20260728-16"></script>
 </body>
 </html>
