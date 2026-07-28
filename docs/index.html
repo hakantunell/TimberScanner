@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#17351f">
   <title>TimberScanner</title>
-  <link rel="stylesheet" href="styles.css?v=20260728-29">
+  <link rel="stylesheet" href="styles.css?v=20260728-30">
   <script type="importmap">
     {
       "imports": {
-        "./src/transfer/cloud-relay.js": "./src/transfer/cloud-relay.js?v=20260728-29"
+        "./src/transfer/cloud-relay.js": "./src/transfer/cloud-relay.js?v=20260728-30"
       }
     }
   </script>
@@ -122,6 +122,13 @@
           <div><strong id="feature-match-status">Väntar på två valda bilder</strong><span id="feature-match-detail">Ingen jämförelse ännu</span></div>
         </div>
         <div class="diagnostic-canvas-wrap"><canvas id="feature-match-canvas"></canvas></div>
+        <section class="match-chain">
+          <div class="match-chain-heading">
+            <strong>Bildkedja</strong>
+            <span id="match-chain-summary">Ingen kedja analyserad</span>
+          </div>
+          <div id="match-chain-list" class="match-chain-list"></div>
+        </section>
         <p class="diagnostic-note">Gula linjer visar ömsesidiga orienterade BRIEF-matchningar som klarar affin RANSAC. Ingen extern CDN eller WASM används.</p>
       </section>
 
@@ -145,6 +152,6 @@
     </section>
   </main>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script type="module" src="src/runtime/mode-loader.js?v=20260728-29"></script>
+  <script type="module" src="src/runtime/mode-loader.js?v=20260728-30"></script>
 </body>
 </html>
