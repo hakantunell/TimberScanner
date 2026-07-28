@@ -1,14 +1,11 @@
 import {
-  ACTIVE_SESSION_ID,
   addCapture,
   createCapture,
   createSession,
   nextPass,
   setScaleReference,
 } from './src/scanning/scan-session.js';
-import { deleteSession, loadSession, saveSession } from './src/storage/session-store.js';
 import { CloudRelay } from './src/transfer/cloud-relay.js';
-import { analyseCanvasQuality, describeSharpness } from './src/vision/image-quality.js';
 
 const required = (id) => {
   const element = document.querySelector(`#${id}`);
@@ -45,19 +42,33 @@ const connectionStatus = required('connection-status');
 const showPairingButton = required('show-pairing');
 const workStatus = required('work-status');
 const workDetail = required('work-detail');
+const trace = document.querySelector('#viewer-trace');
 
 const relay = new CloudRelay();
 const previewUrls = new Set();
-const MAX_PREVIEWS = 8;
-const POLL_DELAY_MS = 1500;
+const receivedIds = new Set();
+const POLL_DELAY_MS = 2000;
 let session = createSession();
-let stream = null;
 let mode = null;
 let remoteSession = null;
 let pollTimer = null;
 let pollGeneration = 0;
 let pairingUrl = null;
 let cloudRevision = null;
+let cloudCount = 0;
+let logLines = [];
+
+function log(message) {
+  const stamp = new Date().toLocaleTimeString('sv-SE');
+  const line = `${stamp} ${message}`;
+  console.log(`[diagnostik] ${line}`);
+  logLines.push(line);
+  if (logLines.length > 40) logLines = logLines.slice(-40);
+  if (trace) {
+    trace.style.whiteSpace = 'pre-wrap';
+    trace.textContent = logLines.join('\n');
+  }
+}
 
 function showConnectionScreen() {
   connectionScreen.hidden = false;
@@ -79,105 +90,49 @@ function showRolePicker() {
 }
 
 function refreshStatus() {
-  imageCount.textContent = String(session.images.length);
+  imageCount.textContent = mode === 'viewer' ? `${session.images.length}/${cloudCount}` : String(session.images.length);
   passCount.textContent = String(session.currentPass);
-  analysisCount.textContent = String(session.images.filter((item) => item.quality).length);
+  analysisCount.textContent = '0';
   exportButton.disabled = session.images.length === 0;
+  storageStatus.textContent = mode === 'viewer' ? 'Ej aktiv (diagnostik)' : 'Endast minne';
 }
 
-function clearPreviewUrls() {
+function clearPreviews() {
   for (const url of previewUrls) URL.revokeObjectURL(url);
   previewUrls.clear();
-}
-
-function renderCaptures() {
-  clearPreviewUrls();
   captures.replaceChildren();
-  const recent = [...session.images].reverse().slice(0, MAX_PREVIEWS);
-  for (const capture of recent) {
-    const figure = document.createElement('figure');
-    figure.className = capture.quality ? `quality-${capture.quality.sharpness}` : 'quality-pending';
-    const image = document.createElement('img');
-    image.loading = 'lazy';
-    image.decoding = 'async';
-    const url = URL.createObjectURL(capture.blob);
-    previewUrls.add(url);
-    image.src = url;
-    image.alt = `Bildruta, rotation ${capture.pass}`;
-    const caption = document.createElement('figcaption');
-    caption.textContent = `Rotation ${capture.pass} · ${capture.quality ? describeSharpness(capture.quality) : 'Analys väntar'}`;
-    figure.append(image, caption);
-    captures.append(figure);
-  }
 }
 
-async function persistSession() {
-  storageStatus.textContent = 'Sparar';
-  await saveSession(session);
-  storageStatus.textContent = 'Sparad lokalt';
+function appendCapture(capture) {
+  const figure = document.createElement('figure');
+  figure.className = 'quality-pending';
+  figure.dataset.captureId = capture.id;
+  const image = document.createElement('img');
+  image.loading = 'lazy';
+  image.decoding = 'async';
+  const url = URL.createObjectURL(capture.blob);
+  previewUrls.add(url);
+  image.src = url;
+  image.alt = `Bildruta ${session.images.length}, rotation ${capture.pass}`;
+  const caption = document.createElement('figcaption');
+  caption.textContent = `Bild ${session.images.length} · ${(capture.blob.size / 1024).toFixed(0)} kB · Analys avstängd`;
+  figure.append(image, caption);
+  captures.prepend(figure);
 }
 
-async function clearLocalSession() {
-  await deleteSession(ACTIVE_SESSION_ID);
+function resetMemorySession() {
   session = createSession();
+  receivedIds.clear();
+  cloudCount = 0;
   scaleInput.value = '';
-  renderCaptures();
+  clearPreviews();
   refreshStatus();
-  storageStatus.textContent = 'Ny skanning';
-}
-
-async function analyseBlob(blob) {
-  try {
-    const bitmap = await createImageBitmap(blob);
-    const maxWidth = 1280;
-    const scale = Math.min(1, maxWidth / bitmap.width);
-    const analysisCanvas = document.createElement('canvas');
-    analysisCanvas.width = Math.max(1, Math.round(bitmap.width * scale));
-    analysisCanvas.height = Math.max(1, Math.round(bitmap.height * scale));
-    analysisCanvas.getContext('2d').drawImage(bitmap, 0, 0, analysisCanvas.width, analysisCanvas.height);
-    bitmap.close?.();
-    return analyseCanvasQuality(analysisCanvas);
-  } catch (error) {
-    console.error('Bildanalys misslyckades', error);
-    return { sharpness: 'blurry', sharpnessScore: 0, error: error.message };
-  }
-}
-
-async function addAnalysedCapture(capture) {
-  const quality = await analyseBlob(capture.blob);
-  session = addCapture(session, { ...capture, quality });
-  session = { ...session, currentPass: Math.max(session.currentPass, capture.pass) };
-}
-
-function addUnanalysedCapture(capture) {
-  session = addCapture(session, capture);
-  session = { ...session, currentPass: Math.max(session.currentPass, capture.pass) };
-}
-
-async function startCamera() {
-  stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2160 } },
-    audio: false,
-  });
-  video.srcObject = stream;
-  await video.play();
-  placeholder.hidden = true;
-  captureButton.disabled = false;
-  newPassButton.disabled = false;
+  log('Lokal minnessession rensad');
 }
 
 function canvasToBlob() {
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Kunde inte skapa bildfil')), 'image/jpeg', 0.9);
-  });
-}
-
-function blobToDataUrl(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(blob);
   });
 }
 
@@ -187,73 +142,70 @@ async function captureImage() {
   canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
   const blob = await canvasToBlob();
   const capture = createCapture({ blob, width: canvas.width, height: canvas.height, pass: session.currentPass });
-  await addAnalysedCapture(capture);
-  await persistSession();
-  renderCaptures();
+  session = addCapture(session, capture);
+  appendCapture(capture);
   refreshStatus();
 
   if (mode === 'capture' && remoteSession?.uploadToken) {
     workDetail.textContent = 'Laddar upp bildruta…';
     await relay.uploadCapture(remoteSession, capture);
-    workDetail.textContent = 'Bildruta uppladdad';
+    workDetail.textContent = `${session.images.length} bildrutor tagna`;
   }
 }
 
-async function replaceWithCloudImages(result) {
-  const cloudIds = new Set(result.images.map((image) => image.id));
-  const removedLocally = session.images.some((image) => !cloudIds.has(image.id));
-  if (removedLocally) {
-    session = { ...session, images: session.images.filter((image) => cloudIds.has(image.id)) };
-  }
+async function downloadOne(result) {
+  const next = result.images.find((image) => !receivedIds.has(image.id));
+  if (!next) return false;
 
-  const localIds = new Set(session.images.map((image) => image.id));
-  const missing = result.images.filter((image) => !localIds.has(image.id));
-  let received = 0;
-  for (const imageInfo of missing) {
-    workDetail.textContent = `Hämtar bilder ${session.images.length + 1}/${result.images.length}…`;
-    const blob = await relay.downloadImage(remoteSession, imageInfo.id);
-    const metadata = imageInfo.metadata ?? {};
-    addUnanalysedCapture({
-      id: imageInfo.id,
-      pass: Number(metadata.pass) || 1,
-      width: Number(metadata.width) || 0,
-      height: Number(metadata.height) || 0,
-      capturedAt: metadata.capturedAt ?? imageInfo.uploadedAt,
-      markerObservations: [],
-      depthFrame: null,
-      blob,
-    });
-    localIds.add(imageInfo.id);
-    received += 1;
-    refreshStatus();
-    await new Promise((resolve) => window.setTimeout(resolve, 0));
-  }
+  const ordinal = session.images.length + 1;
+  log(`START bild ${ordinal}/${result.images.length}: ${next.id}`);
+  workDetail.textContent = `Hämtar bild ${ordinal}/${result.images.length}…`;
+  const started = performance.now();
+  const blob = await relay.downloadImage(remoteSession, next.id);
+  const elapsed = Math.round(performance.now() - started);
+  log(`NEDLADDAD bild ${ordinal}: ${(blob.size / 1024).toFixed(0)} kB på ${elapsed} ms`);
 
-  if (removedLocally || received) {
-    await persistSession();
-    renderCaptures();
-    refreshStatus();
-  }
-  return received;
+  const metadata = next.metadata ?? {};
+  const capture = {
+    id: next.id,
+    pass: Number(metadata.pass) || 1,
+    width: Number(metadata.width) || 0,
+    height: Number(metadata.height) || 0,
+    capturedAt: metadata.capturedAt ?? next.uploadedAt,
+    markerObservations: [],
+    depthFrame: null,
+    blob,
+  };
+  session = addCapture(session, capture);
+  session = { ...session, currentPass: Math.max(session.currentPass, capture.pass) };
+  receivedIds.add(next.id);
+  log(`TILLAGD bild ${ordinal}: session=${session.images.length}`);
+  appendCapture(capture);
+  log(`VISAD bild ${ordinal}: DOM-bilder=${captures.querySelectorAll('img').length}`);
+  refreshStatus();
+  return true;
 }
 
 async function receiveCloudState() {
   if (!remoteSession?.viewToken) return;
+  log('Begär bildlista');
   const result = await relay.listImages(remoteSession);
+  cloudCount = result.images.length;
   const revision = result.live?.revision ?? 0;
-  if (cloudRevision !== null && revision !== cloudRevision && result.images.length === 0) {
-    await clearLocalSession();
-  }
+  log(`METADATA: ${cloudCount} bilder, revision ${revision}`);
+
+  if (cloudRevision !== null && revision !== cloudRevision && cloudCount === 0) resetMemorySession();
   cloudRevision = revision;
-  await replaceWithCloudImages(result);
+  await downloadOne(result);
 
   if (result.live?.connected) {
     showWorkScreen();
-    workStatus.textContent = 'Telefon ansluten';
-    workDetail.textContent = `${session.images.length}/${result.images.length} bildrutor mottagna`;
+    workStatus.textContent = 'Telefon ansluten · diagnostik';
+    workDetail.textContent = `${session.images.length}/${cloudCount} bildrutor mottagna`;
   } else {
     connectionStatus.textContent = 'Väntar på telefonen';
   }
+  refreshStatus();
 }
 
 function startPolling() {
@@ -264,6 +216,7 @@ function startPolling() {
     try {
       await receiveCloudState();
     } catch (error) {
+      log(`FEL: ${error instanceof Error ? error.message : String(error)}`);
       const target = workScreen.hidden ? connectionStatus : workDetail;
       target.textContent = `Synkfel: ${error.message}`;
       console.error(error);
@@ -271,6 +224,7 @@ function startPolling() {
       if (generation === pollGeneration) pollTimer = window.setTimeout(poll, POLL_DELAY_MS);
     }
   };
+  log('Polling startad: en bild per varv');
   poll();
 }
 
@@ -278,36 +232,6 @@ function stopPolling() {
   pollGeneration += 1;
   if (pollTimer) window.clearTimeout(pollTimer);
   pollTimer = null;
-}
-
-async function startNewPass() {
-  session = nextPass(session);
-  await persistSession();
-  refreshStatus();
-}
-
-async function exportSession() {
-  const images = await Promise.all(session.images.map(async ({ blob, ...metadata }) => ({
-    ...metadata,
-    imageDataUrl: await blobToDataUrl(blob),
-  })));
-  const file = new Blob([JSON.stringify({ ...session, images, exportedAt: new Date().toISOString() }, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(file);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = `timber-scan-${new Date().toISOString().replaceAll(':', '-')}.json`;
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
-
-async function resetSession() {
-  if (!confirm('Rensa hela skanningen på både telefonen, datorn och i molnet?')) return;
-  workDetail.textContent = 'Rensar skanningen…';
-  if (remoteSession?.sessionId && (remoteSession.uploadToken || remoteSession.viewToken)) {
-    await relay.clearImages(remoteSession);
-  }
-  await clearLocalSession();
-  workDetail.textContent = 'Skanningen är rensad';
 }
 
 function encodeCaptureCode(value) {
@@ -332,12 +256,12 @@ function renderPairingCode() {
 
 async function startViewerMode() {
   mode = 'viewer';
+  resetMemorySession();
   showConnectionScreen();
   qrCode.hidden = false;
   manualConnect.hidden = true;
-  pairingHelp.textContent = 'Skapar en privat session i Cloudflare…';
+  pairingHelp.textContent = 'Skapar en privat diagnostiksession i Cloudflare…';
   connectionStatus.textContent = 'Kontrollerar backend';
-  await clearLocalSession();
   await relay.health();
   remoteSession = await relay.createSession();
   cloudRevision = 0;
@@ -365,9 +289,9 @@ async function activateCaptureConnection(cloudSession) {
 
 async function startCaptureMode(cloudSession = null) {
   mode = 'capture';
-  if (cloudSession) {
-    await activateCaptureConnection(cloudSession);
-  } else {
+  resetMemorySession();
+  if (cloudSession) await activateCaptureConnection(cloudSession);
+  else {
     showConnectionScreen();
     manualConnect.hidden = false;
     qrCode.hidden = true;
@@ -376,52 +300,47 @@ async function startCaptureMode(cloudSession = null) {
   }
 }
 
-async function connectCaptureCode() {
-  await activateCaptureConnection(decodeCaptureCode(sessionCode.value.trim()));
+async function resetSession() {
+  if (!confirm('Rensa hela skanningen på telefonen, datorn och i molnet?')) return;
+  if (remoteSession?.sessionId && (remoteSession.uploadToken || remoteSession.viewToken)) await relay.clearImages(remoteSession);
+  resetMemorySession();
+  workDetail.textContent = 'Skanningen är rensad';
 }
 
 async function initialise() {
-  session = await loadSession(ACTIVE_SESSION_ID) ?? createSession();
-  renderCaptures();
   refreshStatus();
   const params = new URLSearchParams(window.location.search);
   if (params.get('mode') === 'capture') {
     const sessionId = params.get('session');
     const uploadToken = params.get('uploadToken');
     await startCaptureMode(sessionId && uploadToken ? { sessionId, uploadToken } : null);
-  } else {
-    showRolePicker();
-  }
+  } else showRolePicker();
 }
 
 viewerModeButton.addEventListener('click', () => startViewerMode().catch((error) => {
   showConnectionScreen();
   connectionStatus.textContent = `Kunde inte skapa session: ${error.message}`;
-  console.error(error);
+  log(`STARTFEL: ${error.message}`);
 }));
-captureModeButton.addEventListener('click', () => startCaptureMode().catch((error) => {
-  showConnectionScreen();
-  connectionStatus.textContent = error.message;
-  console.error(error);
-}));
-connectButton.addEventListener('click', () => connectCaptureCode().catch((error) => { connectionStatus.textContent = error.message; }));
+captureModeButton.addEventListener('click', () => startCaptureMode().catch(console.error));
+connectButton.addEventListener('click', () => activateCaptureConnection(decodeCaptureCode(sessionCode.value.trim())).catch(console.error));
 showPairingButton.addEventListener('click', () => { renderPairingCode(); showConnectionScreen(); });
-startButton.addEventListener('click', () => startCamera().then(() => { startButton.disabled = true; }).catch((error) => {
-  placeholder.textContent = `Kameran kunde inte startas: ${error.message}`;
-}));
 captureButton.addEventListener('click', () => captureImage().catch((error) => { workDetail.textContent = error.message; }));
-newPassButton.addEventListener('click', () => startNewPass().catch(console.error));
-exportButton.addEventListener('click', () => exportSession().catch(console.error));
-resetButton.addEventListener('click', () => resetSession().catch((error) => { workDetail.textContent = `Kunde inte rensa: ${error.message}`; }));
-scaleInput.addEventListener('change', async () => {
+newPassButton.addEventListener('click', () => { session = nextPass(session); refreshStatus(); });
+resetButton.addEventListener('click', () => resetSession().catch((error) => { workDetail.textContent = error.message; }));
+scaleInput.addEventListener('change', () => {
   const value = Number(scaleInput.value);
   session = setScaleReference(session, value > 0 ? value : null);
-  await persistSession();
 });
+
+// Kamerastarten hanteras enbart av camera-controller i telefonläge.
+startButton.dataset.diagnosticVersion = '20260728-9';
+analysisCount.title = 'Analys är avstängd i diagnostikversionen';
+exportButton.disabled = true;
+
 window.addEventListener('pagehide', () => {
-  stream?.getTracks().forEach((track) => track.stop());
   stopPolling();
-  clearPreviewUrls();
+  clearPreviews();
 });
 
 initialise().catch((error) => {
