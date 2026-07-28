@@ -1,4 +1,4 @@
-const VERSION = '20260728-7';
+const VERSION = '20260728-8';
 const params = new URLSearchParams(window.location.search);
 const captureMode = params.get('mode') === 'capture';
 
@@ -15,11 +15,8 @@ if (captureMode) {
   await load('../capture/camera-button-fix.js');
   await load('../scanning/auto-capture.js');
 } else {
-  // Datorn laddar diagnostik och 3D-analys. Ingen av dessa moduler hämtas av telefonen.
+  // Felsökningsläge för datorn: ta endast emot och visa bilder.
+  // OpenCV, bildmatchning, punktmoln och konturdiagnostik är avstängda
+  // tills hela överföringskedjan fungerar stabilt.
   await load('../debug/viewer-trace.js');
-  await load('../vision/sparse-reconstruction.js');
-  await load('../vision/opencv-loader.js');
-  await load('../vision/opencv-reconstruction.js');
-  await load('../vision/feature-matching.js');
-  await load('../vision/contour-diagnostics.js');
 }
