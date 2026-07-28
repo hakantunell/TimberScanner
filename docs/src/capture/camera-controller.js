@@ -75,16 +75,14 @@ async function requestCamera() {
   }));
 }
 
-async function activateCamera(sourceEvent) {
+async function activateCamera(source = 'program') {
   const now = Date.now();
   if (starting || now - lastActivationAt < 700) return;
   lastActivationAt = now;
   starting = true;
-  sourceEvent?.preventDefault?.();
-  sourceEvent?.stopImmediatePropagation?.();
 
   if (startButton) startButton.disabled = true;
-  setStatus(`Startkommando mottaget (${sourceEvent?.type ?? 'program'})`);
+  setStatus(`Startkommando mottaget (${source})`);
   try {
     await requestCamera();
   } catch (error) {
@@ -101,21 +99,9 @@ async function activateCamera(sourceEvent) {
   }
 }
 
-function isCameraStartTarget(event) {
-  const target = event.target instanceof Element ? event.target.closest('#start-camera') : null;
-  return Boolean(target);
-}
-
-// Delegerad lyssning fungerar även i iOS när vyn visas efter att modulen laddats.
-for (const eventName of ['pointerup', 'touchend', 'click']) {
-  document.addEventListener(eventName, (event) => {
-    if (!isCameraStartTarget(event)) return;
-    activateCamera(event);
-  }, { capture: true, passive: false });
-}
-
+window.startTimberCamera = () => activateCamera('inline');
 window.TimberCamera = Object.freeze({
-  start: () => activateCamera(),
+  start: () => activateCamera('api'),
   isReady: () => Boolean(video?.videoWidth && video?.videoHeight),
   getStream: () => window.__timberCameraStream ?? null,
   stop: () => {
@@ -134,7 +120,7 @@ window.TimberCamera = Object.freeze({
 });
 
 if (startButton && video) {
-  setStatus(`Kameramodul redo · säker anslutning: ${window.isSecureContext ? 'ja' : 'nej'} · iOS-säker knapphantering aktiv`);
+  setStatus(`Kameramodul v20260728-3 redo · säker anslutning: ${window.isSecureContext ? 'ja' : 'nej'} · direktknapp aktiv`);
 }
 
 window.addEventListener('pagehide', () => window.TimberCamera?.stop());
