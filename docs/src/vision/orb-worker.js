@@ -8,23 +8,26 @@ function toGray(image) {
   return gray;
 }
 
-function detectCorners(gray, width, height, limit = 160) {
+function detectCorners(gray, width, height, limit = 180) {
   const candidates = [];
   const margin = 8;
-  for (let y = margin; y < height - margin; y += 4) {
-    for (let x = margin; x < width - margin; x += 4) {
+  const xMin = Math.max(margin, Math.round(width * 0.12));
+  const xMax = Math.min(width - margin, Math.round(width * 0.88));
+  const yMin = Math.max(margin, Math.round(height * 0.18));
+  const yMax = Math.min(height - margin, Math.round(height * 0.82));
+  for (let y = yMin; y < yMax; y += 4) {
+    for (let x = xMin; x < xMax; x += 4) {
       const index = (y * width) + x;
       const gx = Math.abs(gray[index + 1] - gray[index - 1]);
       const gy = Math.abs(gray[index + width] - gray[index - width]);
       const diagonal = Math.abs(gray[index + width + 1] - gray[index - width - 1]);
       const score = gx + gy + Math.round(diagonal * 0.5);
-      if (score >= 48) candidates.push({ x, y, score });
+      if (score >= 46) candidates.push({ x, y, score });
     }
   }
   candidates.sort((left, right) => right.score - left.score);
-
   const selected = [];
-  const minDistanceSquared = 10 * 10;
+  const minDistanceSquared = 9 * 9;
   for (const candidate of candidates) {
     let separated = true;
     for (const point of selected) {
@@ -64,41 +67,27 @@ function median(values) {
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
-function geometricFilter(matches, iterations = 100, threshold = 5) {
-  if (matches.length < 3) {
-    return { inliers: matches, model: { dx: 0, dy: 0 }, ratio: matches.length ? 1 : 0 };
-  }
-
+function geometricFilter(matches, iterations = 120, threshold = 6) {
+  if (matches.length < 3) return { inliers: matches, model: { dx: 0, dy: 0 }, ratio: matches.length ? 1 : 0 };
   let best = [];
   let bestDx = 0;
   let bestDy = 0;
-
   for (let iteration = 0; iteration < iterations; iteration += 1) {
     const seed = matches[Math.floor(Math.random() * matches.length)];
     const dx = seed.b.x - seed.a.x;
     const dy = seed.b.y - seed.a.y;
-    const inliers = matches.filter((match) => {
-      const errorX = (match.b.x - match.a.x) - dx;
-      const errorY = (match.b.y - match.a.y) - dy;
-      return Math.hypot(errorX, errorY) <= threshold;
-    });
+    const inliers = matches.filter((match) => Math.hypot((match.b.x - match.a.x) - dx, (match.b.y - match.a.y) - dy) <= threshold);
     if (inliers.length > best.length) {
       best = inliers;
       bestDx = dx;
       bestDy = dy;
     }
   }
-
   if (best.length >= 3) {
     bestDx = median(best.map((match) => match.b.x - match.a.x));
     bestDy = median(best.map((match) => match.b.y - match.a.y));
-    best = matches.filter((match) => {
-      const errorX = (match.b.x - match.a.x) - bestDx;
-      const errorY = (match.b.y - match.a.y) - bestDy;
-      return Math.hypot(errorX, errorY) <= threshold;
-    });
+    best = matches.filter((match) => Math.hypot((match.b.x - match.a.x) - bestDx, (match.b.y - match.a.y) - bestDy) <= threshold);
   }
-
   return {
     inliers: best,
     model: { dx: Math.round(bestDx * 10) / 10, dy: Math.round(bestDy * 10) / 10 },
@@ -114,9 +103,8 @@ function matchFeatures(id, left, right) {
   const pointsA = detectCorners(grayA, left.width, left.height);
   const pointsB = detectCorners(grayB, right.width, right.height);
   const accepted = [];
-  const maxShiftX = Math.round(Math.max(left.width, right.width) * 0.28);
-  const maxShiftY = Math.round(Math.max(left.height, right.height) * 0.18);
-
+  const maxShiftX = Math.round(Math.max(left.width, right.width) * 0.38);
+  const maxShiftY = Math.round(Math.max(left.height, right.height) * 0.28);
   self.postMessage({ id, progress: 'matching', keypointsA: pointsA.length, keypointsB: pointsB.length });
   for (const pointA of pointsA) {
     let best = null;
@@ -131,19 +119,13 @@ function matchFeatures(id, left, right) {
         second = { point: pointB, distance };
       }
     }
-    if (best && second && best.distance < 32 && best.distance < second.distance * 0.82) {
-      accepted.push({
-        a: { x: pointA.x, y: pointA.y },
-        b: { x: best.point.x, y: best.point.y },
-        distance: Math.round(best.distance * 10) / 10,
-      });
+    if (best && second && best.distance < 34 && best.distance < second.distance * 0.84) {
+      accepted.push({ a: { x: pointA.x, y: pointA.y }, b: { x: best.point.x, y: best.point.y }, distance: Math.round(best.distance * 10) / 10 });
     }
   }
-
   accepted.sort((leftMatch, rightMatch) => leftMatch.distance - rightMatch.distance);
   self.postMessage({ id, progress: 'ransac', rawMatches: accepted.length });
   const filtered = geometricFilter(accepted);
-
   return {
     keypointsA: pointsA.length,
     keypointsB: pointsB.length,
@@ -153,18 +135,16 @@ function matchFeatures(id, left, right) {
     motion: filtered.model,
     points: filtered.inliers.slice(0, 100),
     rawPoints: accepted.slice(0, 100),
-    algorithm: 'gradient-corners-patch-sad-ransac-translation-v1',
+    algorithm: 'central-roi-patch-translation-ransac-v1',
   };
 }
 
-self.postMessage({ type: 'ready', version: '20260728-18' });
-
+self.postMessage({ type: 'ready', version: '20260728-19' });
 self.addEventListener('message', (event) => {
   const { id, type, payload } = event.data ?? {};
   if (type !== 'match') return;
   try {
-    const result = matchFeatures(id, payload.left, payload.right);
-    self.postMessage({ id, ok: true, result });
+    self.postMessage({ id, ok: true, result: matchFeatures(id, payload.left, payload.right) });
   } catch (error) {
     self.postMessage({ id, ok: false, error: error instanceof Error ? error.message : String(error) });
   }
