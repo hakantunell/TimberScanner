@@ -32,10 +32,6 @@ async function parseResponse(response) {
   throw new Error(details?.error ?? details?.message ?? rawBody ?? `HTTP ${response.status}`);
 }
 
-function delay(milliseconds) {
-  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
-}
-
 export class CloudRelay {
   constructor({ apiBase = defaultApiBase() } = {}) {
     this.apiBase = apiBase.replace(/\/$/, '');
@@ -103,30 +99,18 @@ export class CloudRelay {
   }
 
   async downloadImage(remoteSession, imageId) {
-    const baseUrl = `${this.apiBase}/link/${encodeURIComponent(remoteSession.sessionId)}/frames/${encodeURIComponent(imageId)}`;
-    let lastResponse = null;
-
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const nonce = `${Date.now()}-${attempt}-${Math.random().toString(36).slice(2)}`;
-      const response = await fetchWithTimeout(
-        `${baseUrl}?downloadNonce=${encodeURIComponent(nonce)}`,
-        {
-          headers: { 'x-view-token': remoteSession.viewToken },
-          cache: 'no-store',
-          credentials: 'same-origin',
-        },
-        30000,
-      );
-      if (response.ok) return response.blob();
-      lastResponse = response;
-      if (response.status !== 403 || attempt === 1) break;
-      await delay(500);
-    }
+    const url = `${this.apiBase}/link/${encodeURIComponent(remoteSession.sessionId)}/frames/${encodeURIComponent(imageId)}`;
+    const response = await fetchWithTimeout(
+      url,
+      { headers: { 'x-view-token': remoteSession.viewToken }, cache: 'no-store' },
+      30000,
+    );
+    if (response.ok) return response.blob();
 
     let details = '';
-    try { details = (await lastResponse?.text())?.trim() ?? ''; } catch { /* ignore */ }
+    try { details = (await response.text()).trim(); } catch { /* ignore */ }
     const suffix = details ? ` – ${details.slice(0, 240)}` : '';
-    throw new Error(`Kunde inte hämta bild: HTTP ${lastResponse?.status ?? 'okänd'}${suffix}`);
+    throw new Error(`Kunde inte hämta bild: HTTP ${response.status}${suffix}`);
   }
 
   async deleteSession(remoteSession) {
