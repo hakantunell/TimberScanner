@@ -1,60 +1,132 @@
-function toGray(image) {
+const VERSION = '20260728-20';
+const OPENCV_URL = 'https://docs.opencv.org/4.10.0/opencv.js';
+let cvPromise = null;
+
+function postProgress(id, progress, extra = {}) {
+  self.postMessage({ id, progress, ...extra });
+}
+
+function loadOpenCv(id) {
+  if (cvPromise) return cvPromise;
+  cvPromise = new Promise((resolve, reject) => {
+    postProgress(id, 'opencv-loading');
+    try {
+      importScripts(OPENCV_URL);
+    } catch (error) {
+      reject(new Error(`OpenCV kunde inte laddas: ${error.message}`));
+      return;
+    }
+
+    const started = Date.now();
+    const finish = (candidate) => {
+      if (candidate?.Mat && candidate?.ORB && candidate?.BFMatcher) {
+        postProgress(id, 'opencv-ready');
+        resolve(candidate);
+        return true;
+      }
+      return false;
+    };
+
+    const poll = () => {
+      const candidate = self.cv;
+      if (candidate && typeof candidate.then === 'function') {
+        candidate.then((resolved) => {
+          self.cv = resolved;
+          if (!finish(resolved)) reject(new Error('OpenCV saknar ORB eller BFMatcher'));
+        }).catch(reject);
+        return;
+      }
+      if (finish(candidate)) return;
+      if (Date.now() - started > 30000) {
+        reject(new Error('OpenCV initierades inte i workern inom 30 sekunder'));
+        return;
+      }
+      setTimeout(poll, 100);
+    };
+    poll();
+  }).catch((error) => {
+    cvPromise = null;
+    throw error;
+  });
+  return cvPromise;
+}
+
+function matFromImage(cv, image) {
+  const mat = new cv.Mat(image.height, image.width, cv.CV_8UC4);
+  mat.data.set(new Uint8Array(image.buffer));
+  return mat;
+}
+
+function buildForegroundMask(cv, image) {
   const rgba = new Uint8Array(image.buffer);
-  const gray = new Uint8Array(image.width * image.height);
-  for (let i = 0; i < gray.length; i += 1) {
-    const o = i * 4;
-    gray[i] = Math.round((rgba[o] * 0.299) + (rgba[o + 1] * 0.587) + (rgba[o + 2] * 0.114));
+  const width = image.width;
+  const height = image.height;
+  const mask = new cv.Mat.zeros(height, width, cv.CV_8UC1);
+  const output = mask.data;
+
+  const borderSamples = [];
+  const borderX = Math.max(4, Math.round(width * 0.08));
+  const borderY = Math.max(4, Math.round(height * 0.08));
+  for (let y = 0; y < height; y += 3) {
+    for (let x = 0; x < width; x += 3) {
+      if (x > borderX && x < width - borderX && y > borderY && y < height - borderY) continue;
+      const offset = ((y * width) + x) * 4;
+      borderSamples.push([rgba[offset], rgba[offset + 1], rgba[offset + 2]]);
+    }
   }
-  return gray;
+
+  const medianChannel = (channel) => {
+    const values = borderSamples.map((sample) => sample[channel]).sort((a, b) => a - b);
+    return values[Math.floor(values.length / 2)] ?? 0;
+  };
+  const background = [medianChannel(0), medianChannel(1), medianChannel(2)];
+
+  const xMin = Math.round(width * 0.08);
+  const xMax = Math.round(width * 0.92);
+  const yMin = Math.round(height * 0.12);
+  const yMax = Math.round(height * 0.88);
+  let selected = 0;
+  for (let y = yMin; y < yMax; y += 1) {
+    for (let x = xMin; x < xMax; x += 1) {
+      const index = (y * width) + x;
+      const offset = index * 4;
+      const dr = rgba[offset] - background[0];
+      const dg = rgba[offset + 1] - background[1];
+      const db = rgba[offset + 2] - background[2];
+      const colourDistance = Math.sqrt((dr * dr) + (dg * dg) + (db * db));
+      const centreWeight = 1 - Math.min(1, Math.abs((y / height) - 0.5) / 0.5);
+      if (colourDistance >= 24 || centreWeight >= 0.62) {
+        output[index] = 255;
+        selected += 1;
+      }
+    }
+  }
+
+  const coverage = Math.round((selected / (width * height)) * 100);
+  return { mask, coverage };
 }
 
-function detectCorners(gray, width, height, limit = 180) {
-  const candidates = [];
-  const margin = 8;
-  const xMin = Math.max(margin, Math.round(width * 0.12));
-  const xMax = Math.min(width - margin, Math.round(width * 0.88));
-  const yMin = Math.max(margin, Math.round(height * 0.18));
-  const yMax = Math.min(height - margin, Math.round(height * 0.82));
-  for (let y = yMin; y < yMax; y += 4) {
-    for (let x = xMin; x < xMax; x += 4) {
-      const i = (y * width) + x;
-      const gx = Math.abs(gray[i + 1] - gray[i - 1]);
-      const gy = Math.abs(gray[i + width] - gray[i - width]);
-      const d = Math.abs(gray[i + width + 1] - gray[i - width - 1]);
-      const score = gx + gy + Math.round(d * 0.5);
-      if (score >= 46) candidates.push({ x, y, score });
-    }
-  }
-  candidates.sort((a, b) => b.score - a.score);
-  const selected = [];
-  for (const candidate of candidates) {
-    let separated = true;
-    for (const point of selected) {
-      const dx = point.x - candidate.x;
-      const dy = point.y - candidate.y;
-      if ((dx * dx) + (dy * dy) < 81) { separated = false; break; }
-    }
-    if (separated) {
-      selected.push(candidate);
-      if (selected.length >= limit) break;
-    }
-  }
-  return selected;
+function point(vector, index) {
+  const keypoint = vector.get(index);
+  return { x: keypoint.pt.x, y: keypoint.pt.y };
 }
 
-function patchDistance(grayA, widthA, pointA, grayB, widthB, pointB, radius = 2) {
-  let total = 0;
-  let count = 0;
-  for (let dy = -radius; dy <= radius; dy += 1) {
-    for (let dx = -radius; dx <= radius; dx += 1) {
-      total += Math.abs(
-        grayA[((pointA.y + dy) * widthA) + pointA.x + dx]
-        - grayB[((pointB.y + dy) * widthB) + pointB.x + dx],
-      );
-      count += 1;
+function readRatioMatches(knn, ratio = 0.75, maximumDistance = 72) {
+  const accepted = [];
+  for (let index = 0; index < knn.size(); index += 1) {
+    const pair = knn.get(index);
+    try {
+      if (pair.size() < 2) continue;
+      const best = pair.get(0);
+      const second = pair.get(1);
+      if (best.distance < second.distance * ratio && best.distance <= maximumDistance) {
+        accepted.push({ queryIdx: best.queryIdx, trainIdx: best.trainIdx, distance: best.distance });
+      }
+    } finally {
+      pair.delete();
     }
   }
-  return total / count;
+  return accepted;
 }
 
 function solve3(matrix, values) {
@@ -85,27 +157,27 @@ function affineFrom(matches) {
   return { a: x[0], b: x[1], tx: x[2], c: y[0], d: y[1], ty: y[2] };
 }
 
-function project(model, point) {
+function project(model, pointValue) {
   return {
-    x: (model.a * point.x) + (model.b * point.y) + model.tx,
-    y: (model.c * point.x) + (model.d * point.y) + model.ty,
+    x: (model.a * pointValue.x) + (model.b * pointValue.y) + model.tx,
+    y: (model.c * pointValue.x) + (model.d * pointValue.y) + model.ty,
   };
 }
 
 function randomThree(matches) {
-  const picked = [];
+  const result = [];
   const used = new Set();
-  while (picked.length < 3) {
+  while (result.length < 3) {
     const index = Math.floor(Math.random() * matches.length);
     if (used.has(index)) continue;
     used.add(index);
-    picked.push(matches[index]);
+    result.push(matches[index]);
   }
-  return picked;
+  return result;
 }
 
-function affineRansac(matches, iterations = 180, threshold = 5.5) {
-  if (matches.length < 3) return { inliers: matches, model: null, ratio: matches.length ? 1 : 0, meanError: 0 };
+function affineRansac(matches, iterations = 300, threshold = 4) {
+  if (matches.length < 3) return { inliers: [], model: null, ratio: 0, meanError: 0 };
   let bestInliers = [];
   let bestModel = null;
   let bestError = Infinity;
@@ -117,7 +189,10 @@ function affineRansac(matches, iterations = 180, threshold = 5.5) {
     for (const match of matches) {
       const predicted = project(model, match.a);
       const error = Math.hypot(predicted.x - match.b.x, predicted.y - match.b.y);
-      if (error <= threshold) { inliers.push(match); totalError += error; }
+      if (error <= threshold) {
+        inliers.push(match);
+        totalError += error;
+      }
     }
     const meanError = inliers.length ? totalError / inliers.length : Infinity;
     if (inliers.length > bestInliers.length || (inliers.length === bestInliers.length && meanError < bestError)) {
@@ -142,51 +217,79 @@ function affineRansac(matches, iterations = 180, threshold = 5.5) {
   };
 }
 
-function matchFeatures(id, left, right) {
-  self.postMessage({ id, progress: 'grayscale' });
-  const grayA = toGray(left);
-  const grayB = toGray(right);
-  self.postMessage({ id, progress: 'corners' });
-  const pointsA = detectCorners(grayA, left.width, left.height);
-  const pointsB = detectCorners(grayB, right.width, right.height);
-  const accepted = [];
-  const maxShiftX = Math.round(Math.max(left.width, right.width) * 0.38);
-  const maxShiftY = Math.round(Math.max(left.height, right.height) * 0.28);
-  self.postMessage({ id, progress: 'matching', keypointsA: pointsA.length, keypointsB: pointsB.length });
-  for (const pointA of pointsA) {
-    let best = null;
-    let second = null;
-    for (const pointB of pointsB) {
-      if (Math.abs(pointA.x - pointB.x) > maxShiftX || Math.abs(pointA.y - pointB.y) > maxShiftY) continue;
-      const distance = patchDistance(grayA, left.width, pointA, grayB, right.width, pointB);
-      if (!best || distance < best.distance) { second = best; best = { point: pointB, distance }; }
-      else if (!second || distance < second.distance) second = { point: pointB, distance };
-    }
-    if (best && second && best.distance < 34 && best.distance < second.distance * 0.84) {
-      accepted.push({ a: { x: pointA.x, y: pointA.y }, b: { x: best.point.x, y: best.point.y }, distance: Math.round(best.distance * 10) / 10 });
+async function matchFeatures(id, left, right) {
+  const cv = await loadOpenCv(id);
+  postProgress(id, 'mask');
+
+  const rgbaA = matFromImage(cv, left);
+  const rgbaB = matFromImage(cv, right);
+  const grayA = new cv.Mat();
+  const grayB = new cv.Mat();
+  const maskAInfo = buildForegroundMask(cv, left);
+  const maskBInfo = buildForegroundMask(cv, right);
+  const keyA = new cv.KeyPointVector();
+  const keyB = new cv.KeyPointVector();
+  const descA = new cv.Mat();
+  const descB = new cv.Mat();
+  const orb = new cv.ORB(1200);
+  const matcher = new cv.BFMatcher(cv.NORM_HAMMING, false);
+  const forwardKnn = new cv.DMatchVectorVector();
+  const reverseKnn = new cv.DMatchVectorVector();
+  const resources = [rgbaA, rgbaB, grayA, grayB, maskAInfo.mask, maskBInfo.mask, keyA, keyB, descA, descB, orb, matcher, forwardKnn, reverseKnn];
+
+  try {
+    cv.cvtColor(rgbaA, grayA, cv.COLOR_RGBA2GRAY);
+    cv.cvtColor(rgbaB, grayB, cv.COLOR_RGBA2GRAY);
+    postProgress(id, 'orb');
+    orb.detectAndCompute(grayA, maskAInfo.mask, keyA, descA);
+    orb.detectAndCompute(grayB, maskBInfo.mask, keyB, descB);
+    if (descA.empty() || descB.empty()) throw new Error('För få ORB-detaljer i stockmasken');
+
+    postProgress(id, 'matching', { keypointsA: keyA.size(), keypointsB: keyB.size() });
+    matcher.knnMatch(descA, descB, forwardKnn, 2);
+    matcher.knnMatch(descB, descA, reverseKnn, 2);
+    const forward = readRatioMatches(forwardKnn);
+    const reverse = readRatioMatches(reverseKnn);
+    const reversePairs = new Set(reverse.map((match) => `${match.trainIdx}:${match.queryIdx}`));
+    const mutual = forward.filter((match) => reversePairs.has(`${match.queryIdx}:${match.trainIdx}`));
+    const points = mutual.map((match) => ({
+      a: point(keyA, match.queryIdx),
+      b: point(keyB, match.trainIdx),
+      distance: Math.round(match.distance * 10) / 10,
+    }));
+
+    postProgress(id, 'ransac', { rawMatches: points.length });
+    const filtered = affineRansac(points);
+    return {
+      keypointsA: keyA.size(),
+      keypointsB: keyB.size(),
+      ratioMatches: forward.length,
+      rawMatches: points.length,
+      matches: filtered.inliers.length,
+      inlierRatio: Math.round(filtered.ratio * 100),
+      meanError: filtered.meanError,
+      motion: filtered.model,
+      maskCoverageA: maskAInfo.coverage,
+      maskCoverageB: maskBInfo.coverage,
+      points: filtered.inliers.slice(0, 120),
+      rawPoints: points.slice(0, 120),
+      algorithm: 'opencv-orb-mutual-ratio-affine-ransac-v1',
+    };
+  } finally {
+    for (const resource of resources.reverse()) {
+      try { resource.delete(); } catch { /* best effort cleanup */ }
     }
   }
-  accepted.sort((a, b) => a.distance - b.distance);
-  self.postMessage({ id, progress: 'ransac', rawMatches: accepted.length });
-  const filtered = affineRansac(accepted);
-  return {
-    keypointsA: pointsA.length,
-    keypointsB: pointsB.length,
-    rawMatches: accepted.length,
-    matches: filtered.inliers.length,
-    inlierRatio: Math.round(filtered.ratio * 100),
-    meanError: filtered.meanError,
-    motion: filtered.model,
-    points: filtered.inliers.slice(0, 100),
-    rawPoints: accepted.slice(0, 100),
-    algorithm: 'central-roi-patch-affine-ransac-v1',
-  };
 }
 
-self.postMessage({ type: 'ready', version: '20260728-19' });
-self.addEventListener('message', (event) => {
+self.postMessage({ type: 'ready', version: VERSION, engine: 'OpenCV ORB' });
+self.addEventListener('message', async (event) => {
   const { id, type, payload } = event.data ?? {};
   if (type !== 'match') return;
-  try { self.postMessage({ id, ok: true, result: matchFeatures(id, payload.left, payload.right) }); }
-  catch (error) { self.postMessage({ id, ok: false, error: error instanceof Error ? error.message : String(error) }); }
+  try {
+    const result = await matchFeatures(id, payload.left, payload.right);
+    self.postMessage({ id, ok: true, result });
+  } catch (error) {
+    self.postMessage({ id, ok: false, error: error instanceof Error ? error.message : String(error) });
+  }
 });
