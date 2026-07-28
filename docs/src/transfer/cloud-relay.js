@@ -42,11 +42,12 @@ export class CloudRelay {
   }
 
   async createSession() {
-    return parseResponse(await fetchWithTimeout(`${this.apiBase}/start`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: '{}',
-    }, 12000));
+    const nonce = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+    return parseResponse(await fetchWithTimeout(
+      `${this.apiBase}/open?nonce=${encodeURIComponent(nonce)}`,
+      { method: 'GET', cache: 'no-store' },
+      12000,
+    ));
   }
 
   async markConnected(remoteSession) {
