@@ -5,153 +5,38 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#17351f">
   <title>TimberScanner</title>
-  <link rel="stylesheet" href="styles.css?v=20260728-30">
+  <link rel="stylesheet" href="styles.css?v=20260728-31">
   <script type="importmap">
     {
       "imports": {
-        "./src/transfer/cloud-relay.js": "./src/transfer/cloud-relay.js?v=20260728-30"
+        "./src/transfer/cloud-relay.js": "./src/transfer/cloud-relay.js?v=20260728-31"
       }
     }
   </script>
 </head>
 <body>
   <main>
-    <header>
-      <p class="eyebrow">USB-prototyp</p>
-      <h1>TimberScanner</h1>
-    </header>
-
-    <section id="role-picker" class="panel">
-      <h2>Kamerakälla</h2>
-      <div class="role-grid">
-        <button id="viewer-mode">USB-webbkamera</button>
-        <button id="capture-mode">Mobilkamera (senare)</button>
-      </div>
-    </section>
-
-    <section id="connection-screen" class="panel" hidden>
-      <h2>Anslut telefon</h2>
-      <p id="pairing-help"></p>
-      <div id="qr-code" class="qr-code"></div>
-      <div id="manual-connect">
-        <label id="peer-label" for="peer-code">Sessionskod</label>
-        <div class="peer-row">
-          <input id="peer-code" autocomplete="off" autocapitalize="none" spellcheck="false">
-          <button id="connect-peer">Anslut</button>
-        </div>
-      </div>
-      <p><strong>Status:</strong> <span id="connection-status">Inte ansluten</span></p>
-      <p class="diagnostic-note"><strong>Felsökning:</strong> <span id="viewer-trace">Väntar på klick</span></p>
-    </section>
-
+    <header><p class="eyebrow">USB-prototyp</p><h1>TimberScanner</h1></header>
+    <section id="role-picker" class="panel"><h2>Kamerakälla</h2><div class="role-grid"><button id="viewer-mode">USB-webbkamera</button><button id="capture-mode">Mobilkamera (senare)</button></div></section>
+    <section id="connection-screen" class="panel" hidden><h2>Anslut telefon</h2><p id="pairing-help"></p><div id="qr-code" class="qr-code"></div><div id="manual-connect"><label id="peer-label" for="peer-code">Sessionskod</label><div class="peer-row"><input id="peer-code" autocomplete="off" autocapitalize="none" spellcheck="false"><button id="connect-peer">Anslut</button></div></div><p><strong>Status:</strong> <span id="connection-status">Inte ansluten</span></p><p class="diagnostic-note"><strong>Felsökning:</strong> <span id="viewer-trace">Väntar på klick</span></p></section>
     <section id="work-screen" hidden>
-      <section class="work-toolbar panel">
-        <div>
-          <strong id="work-status">USB-kamera</strong>
-          <span id="work-detail">Välj kamera, starta den och ta bildrutor</span>
-        </div>
-        <button id="show-pairing" class="secondary">Mobilkamera</button>
-      </section>
-
+      <section class="work-toolbar panel"><div><strong id="work-status">USB-kamera</strong><span id="work-detail">Välj kamera, starta den och ta bildrutor</span></div><button id="show-pairing" class="secondary">Mobilkamera</button></section>
       <section id="capture-panel">
-        <section class="camera-card">
-          <video id="camera" playsinline muted></video>
-          <canvas id="snapshot" hidden></canvas>
-          <div id="camera-placeholder">Kameran är inte startad</div>
-        </section>
+        <section class="camera-card"><video id="camera" playsinline muted></video><canvas id="snapshot" hidden></canvas><div id="camera-placeholder">Kameran är inte startad</div></section>
         <p class="panel"><strong>Kamera:</strong> <span id="camera-status">Kameramodulen laddas…</span></p>
-
-        <section class="settings-card">
-          <label for="camera-device">Kamera</label>
-          <select id="camera-device">
-            <option value="">Webbläsarens standardkamera</option>
-          </select>
-          <label for="camera-resolution">Upplösning</label>
-          <select id="camera-resolution">
-            <option value="1280x720" selected>1280 × 720</option>
-            <option value="1920x1080">1920 × 1080</option>
-            <option value="640x480">640 × 480</option>
-          </select>
-          <small id="camera-selection-help">Kameranamnen visas efter att webbläsaren fått kameraåtkomst.</small>
-        </section>
-
-        <section class="scan-controller panel">
-          <div>
-            <strong>Automatisk skanning</strong>
-            <span id="auto-scan-status">Redo</span>
-            <small id="live-sharpness">Skärpa ej mätt</small>
-          </div>
-          <div class="scan-actions">
-            <button id="start-auto-scan">Starta skanning</button>
-            <button id="pause-auto-scan" class="secondary" disabled>Pausa</button>
-          </div>
-        </section>
-
-        <section class="controls">
-          <button id="start-camera" type="button">Starta vald kamera</button>
-          <button id="capture" disabled>Ta bild manuellt</button>
-          <button id="new-pass" disabled>Ny rotation</button>
-          <button id="export" class="secondary" disabled>Exportera reservkopia</button>
-          <button id="reset" class="secondary">Rensa skanning</button>
-        </section>
-        <section class="settings-card">
-          <label for="scale-mm">Referenslängd i bilden, mm</label>
-          <input id="scale-mm" type="number" inputmode="decimal" min="1" step="1" placeholder="Exempel: 500">
-        </section>
+        <section class="settings-card"><label for="camera-device">Kamera</label><select id="camera-device"><option value="">Webbläsarens standardkamera</option></select><label for="camera-resolution">Upplösning</label><select id="camera-resolution"><option value="1280x720" selected>1280 × 720</option><option value="1920x1080">1920 × 1080</option><option value="640x480">640 × 480</option></select><small id="camera-selection-help">Kameranamnen visas efter att webbläsaren fått kameraåtkomst.</small></section>
+        <section class="scan-controller panel"><div><strong>Automatisk skanning</strong><span id="auto-scan-status">Redo</span><small id="live-sharpness">Skärpa ej mätt</small></div><div class="scan-actions"><button id="start-auto-scan">Starta skanning</button><button id="pause-auto-scan" class="secondary" disabled>Pausa</button></div></section>
+        <section class="controls"><button id="start-camera" type="button">Starta vald kamera</button><button id="capture" disabled>Ta bild manuellt</button><button id="new-pass" disabled>Ny rotation</button><button id="export" class="secondary" disabled>Exportera reservkopia</button><button id="reset" class="secondary">Rensa skanning</button></section>
+        <section class="settings-card"><label for="scale-mm">Referenslängd i bilden, mm</label><input id="scale-mm" type="number" inputmode="decimal" min="1" step="1" placeholder="Exempel: 500"></section>
       </section>
-
-      <section class="status-grid">
-        <article><span>Bildrutor</span><strong id="image-count">0</strong></article>
-        <article><span>Aktuell rotation</span><strong id="pass-count">1</strong></article>
-        <article><span>Analyserade</span><strong id="analysis-count">0</strong></article>
-        <article><span>Urval</span><strong id="storage-status">Klar</strong></article>
-      </section>
-
-      <section id="sparse-reconstruction" class="diagnostic-panel" hidden>
-        <div class="diagnostic-heading">
-          <div><p class="eyebrow">Första 3D-resultatet</p><h2>Punktmoln</h2></div>
-          <div><strong id="sparse-status">Väntar på bildmatchning</strong><span id="sparse-detail">Ingen triangulering ännu</span></div>
-        </div>
-        <div class="diagnostic-canvas-wrap"><canvas id="sparse-point-cloud"></canvas></div>
-        <p class="diagnostic-note">Pose och triangulering aktiveras först när bildmatchningen är geometriskt stabil.</p>
-      </section>
-
-      <section id="feature-matching" class="diagnostic-panel" hidden>
-        <div class="diagnostic-heading">
-          <div><p class="eyebrow">Analyspipeline</p><h2>Lokal ORB-liknande bildmatchning</h2></div>
-          <div><strong id="feature-match-status">Väntar på två valda bilder</strong><span id="feature-match-detail">Ingen jämförelse ännu</span></div>
-        </div>
-        <div class="diagnostic-canvas-wrap"><canvas id="feature-match-canvas"></canvas></div>
-        <section class="match-chain">
-          <div class="match-chain-heading">
-            <strong>Bildkedja</strong>
-            <span id="match-chain-summary">Ingen kedja analyserad</span>
-          </div>
-          <div id="match-chain-list" class="match-chain-list"></div>
-        </section>
-        <p class="diagnostic-note">Gula linjer visar ömsesidiga orienterade BRIEF-matchningar som klarar affin RANSAC. Ingen extern CDN eller WASM används.</p>
-      </section>
-
-      <section id="contour-diagnostics" class="diagnostic-panel" hidden>
-        <div class="diagnostic-heading">
-          <div><p class="eyebrow">Första geometristeget</p><h2>Konturdiagnostik</h2></div>
-          <div><strong id="contour-status">Väntar på bildruta</strong><span id="contour-coverage">Ingen analys ännu</span></div>
-        </div>
-        <div class="diagnostic-canvas-wrap">
-          <canvas id="contour-source" hidden></canvas>
-          <canvas id="contour-overlay"></canvas>
-        </div>
-        <p class="diagnostic-note">Konturdiagnostik är fortsatt avstängd.</p>
-      </section>
-
-      <section class="analysis-section">
-        <h2>Analysunderlag</h2>
-        <p>Grön ram betyder vald för fortsatt analys. Nedtonade bilder är oskarpa eller nästan identiska med en skarpare granne.</p>
-        <div id="captures" class="captures"></div>
-      </section>
+      <section class="status-grid"><article><span>Bildrutor</span><strong id="image-count">0</strong></article><article><span>Aktuell rotation</span><strong id="pass-count">1</strong></article><article><span>Analyserade</span><strong id="analysis-count">0</strong></article><article><span>Urval</span><strong id="storage-status">Klar</strong></article></section>
+      <section id="sparse-reconstruction" class="diagnostic-panel" hidden><div class="diagnostic-heading"><div><p class="eyebrow">Första 3D-resultatet</p><h2>Preliminärt punktmoln</h2></div><div><strong id="sparse-status">Väntar på bildkedjan</strong><span id="sparse-detail">Ingen rekonstruktion ännu</span></div></div><div class="diagnostic-canvas-wrap"><canvas id="sparse-point-cloud"></canvas></div><p class="diagnostic-note">Detta är ett parallaxbaserat diagnostikmoln utan metrisk skala. Korrekt pose, kamerakalibrering och triangulering kommer i nästa steg.</p></section>
+      <section id="feature-matching" class="diagnostic-panel" hidden><div class="diagnostic-heading"><div><p class="eyebrow">Analyspipeline</p><h2>Lokal ORB-liknande bildmatchning</h2></div><div><strong id="feature-match-status">Väntar på två valda bilder</strong><span id="feature-match-detail">Ingen jämförelse ännu</span></div></div><div class="diagnostic-canvas-wrap"><canvas id="feature-match-canvas"></canvas></div><section class="match-chain"><div class="match-chain-heading"><strong>Bildkedja</strong><span id="match-chain-summary">Ingen kedja analyserad</span></div><div id="match-chain-list" class="match-chain-list"></div></section><p class="diagnostic-note">Gula linjer visar ömsesidiga orienterade BRIEF-matchningar som klarar affin RANSAC. Ingen extern CDN eller WASM används.</p></section>
+      <section id="contour-diagnostics" class="diagnostic-panel" hidden><div class="diagnostic-heading"><div><p class="eyebrow">Första geometristeget</p><h2>Konturdiagnostik</h2></div><div><strong id="contour-status">Väntar på bildruta</strong><span id="contour-coverage">Ingen analys ännu</span></div></div><div class="diagnostic-canvas-wrap"><canvas id="contour-source" hidden></canvas><canvas id="contour-overlay"></canvas></div><p class="diagnostic-note">Konturdiagnostik är fortsatt avstängd.</p></section>
+      <section class="analysis-section"><h2>Analysunderlag</h2><p>Grön ram betyder vald för fortsatt analys. Nedtonade bilder är oskarpa eller nästan identiska med en skarpare granne.</p><div id="captures" class="captures"></div></section>
     </section>
   </main>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script type="module" src="src/runtime/mode-loader.js?v=20260728-30"></script>
+  <script type="module" src="src/runtime/mode-loader.js?v=20260728-31"></script>
 </body>
 </html>
