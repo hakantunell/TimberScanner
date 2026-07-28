@@ -48,11 +48,14 @@ const workDetail = required('work-detail');
 
 const relay = new CloudRelay();
 const previewUrls = new Set();
+const MAX_PREVIEWS = 8;
+const POLL_DELAY_MS = 1500;
 let session = createSession();
 let stream = null;
 let mode = null;
 let remoteSession = null;
 let pollTimer = null;
+let pollGeneration = 0;
 let pairingUrl = null;
 let cloudRevision = null;
 
@@ -90,10 +93,13 @@ function clearPreviewUrls() {
 function renderCaptures() {
   clearPreviewUrls();
   captures.replaceChildren();
-  for (const capture of [...session.images].reverse()) {
+  const recent = [...session.images].reverse().slice(0, MAX_PREVIEWS);
+  for (const capture of recent) {
     const figure = document.createElement('figure');
     figure.className = capture.quality ? `quality-${capture.quality.sharpness}` : 'quality-pending';
     const image = document.createElement('img');
+    image.loading = 'lazy';
+    image.decoding = 'async';
     const url = URL.createObjectURL(capture.blob);
     previewUrls.add(url);
     image.src = url;
@@ -123,10 +129,12 @@ async function clearLocalSession() {
 async function analyseBlob(blob) {
   try {
     const bitmap = await createImageBitmap(blob);
+    const maxWidth = 1280;
+    const scale = Math.min(1, maxWidth / bitmap.width);
     const analysisCanvas = document.createElement('canvas');
-    analysisCanvas.width = bitmap.width;
-    analysisCanvas.height = bitmap.height;
-    analysisCanvas.getContext('2d').drawImage(bitmap, 0, 0);
+    analysisCanvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    analysisCanvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    analysisCanvas.getContext('2d').drawImage(bitmap, 0, 0, analysisCanvas.width, analysisCanvas.height);
     bitmap.close?.();
     return analyseCanvasQuality(analysisCanvas);
   } catch (error) {
@@ -138,6 +146,11 @@ async function analyseBlob(blob) {
 async function addAnalysedCapture(capture) {
   const quality = await analyseBlob(capture.blob);
   session = addCapture(session, { ...capture, quality });
+  session = { ...session, currentPass: Math.max(session.currentPass, capture.pass) };
+}
+
+function addUnanalysedCapture(capture) {
+  session = addCapture(session, capture);
   session = { ...session, currentPass: Math.max(session.currentPass, capture.pass) };
 }
 
@@ -193,11 +206,14 @@ async function replaceWithCloudImages(result) {
     session = { ...session, images: session.images.filter((image) => cloudIds.has(image.id)) };
   }
 
-  const missing = result.images.filter((image) => !session.images.some((item) => item.id === image.id));
+  const localIds = new Set(session.images.map((image) => image.id));
+  const missing = result.images.filter((image) => !localIds.has(image.id));
+  let received = 0;
   for (const imageInfo of missing) {
+    workDetail.textContent = `Hämtar bilder ${session.images.length + 1}/${result.images.length}…`;
     const blob = await relay.downloadImage(remoteSession, imageInfo.id);
     const metadata = imageInfo.metadata ?? {};
-    await addAnalysedCapture({
+    addUnanalysedCapture({
       id: imageInfo.id,
       pass: Number(metadata.pass) || 1,
       width: Number(metadata.width) || 0,
@@ -207,13 +223,18 @@ async function replaceWithCloudImages(result) {
       depthFrame: null,
       blob,
     });
+    localIds.add(imageInfo.id);
+    received += 1;
+    refreshStatus();
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
   }
 
-  if (removedLocally || missing.length) {
+  if (removedLocally || received) {
     await persistSession();
     renderCaptures();
     refreshStatus();
   }
+  return received;
 }
 
 async function receiveCloudState() {
@@ -229,7 +250,7 @@ async function receiveCloudState() {
   if (result.live?.connected) {
     showWorkScreen();
     workStatus.textContent = 'Telefon ansluten';
-    workDetail.textContent = `${result.images.length} bildrutor i molnet`;
+    workDetail.textContent = `${session.images.length}/${result.images.length} bildrutor mottagna`;
   } else {
     connectionStatus.textContent = 'Väntar på telefonen';
   }
@@ -237,20 +258,25 @@ async function receiveCloudState() {
 
 function startPolling() {
   stopPolling();
+  const generation = pollGeneration;
   const poll = async () => {
-    try { await receiveCloudState(); }
-    catch (error) {
+    if (generation !== pollGeneration) return;
+    try {
+      await receiveCloudState();
+    } catch (error) {
       const target = workScreen.hidden ? connectionStatus : workDetail;
       target.textContent = `Synkfel: ${error.message}`;
       console.error(error);
+    } finally {
+      if (generation === pollGeneration) pollTimer = window.setTimeout(poll, POLL_DELAY_MS);
     }
   };
   poll();
-  pollTimer = window.setInterval(poll, 1000);
 }
 
 function stopPolling() {
-  if (pollTimer) window.clearInterval(pollTimer);
+  pollGeneration += 1;
+  if (pollTimer) window.clearTimeout(pollTimer);
   pollTimer = null;
 }
 
