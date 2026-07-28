@@ -5,13 +5,31 @@ function translatePublicPath(suffix) {
   if (suffix === 'health') return '/health';
 
   const parts = suffix.split('/').filter(Boolean);
-  if (parts[0] !== 'link' || !parts[1]) return `/${suffix}`;
 
-  const sessionId = encodeURIComponent(parts[1]);
-  if (parts.length === 2) return `/sessions/${sessionId}`;
-  if (parts[2] === 'frames' && parts.length === 3) return `/sessions/${sessionId}/images`;
-  if (parts[2] === 'frames' && parts[3]) {
-    return `/sessions/${sessionId}/images/${encodeURIComponent(parts[3])}`;
+  // Ny neutral publik struktur:
+  // /timber-sync/session/{id}
+  // /timber-sync/session/{id}/ready
+  // /timber-sync/session/{id}/images
+  // /timber-sync/session/{id}/images/{imageId}
+  if (parts[0] === 'session' && parts[1]) {
+    const sessionId = encodeURIComponent(parts[1]);
+    if (parts.length === 2) return `/sessions/${sessionId}`;
+    if (parts[2] === 'ready') return `/sessions/${sessionId}/connected`;
+    if (parts[2] === 'images' && parts.length === 3) return `/sessions/${sessionId}/images`;
+    if (parts[2] === 'images' && parts[3]) {
+      return `/sessions/${sessionId}/images/${encodeURIComponent(parts[3])}`;
+    }
+  }
+
+  // Bakåtkompatibilitet för äldre klienter.
+  if (parts[0] === 'link' && parts[1]) {
+    const sessionId = encodeURIComponent(parts[1]);
+    if (parts.length === 2) return `/sessions/${sessionId}`;
+    if (parts[2] === 'ready') return `/sessions/${sessionId}/connected`;
+    if (parts[2] === 'frames' && parts.length === 3) return `/sessions/${sessionId}/images`;
+    if (parts[2] === 'frames' && parts[3]) {
+      return `/sessions/${sessionId}/images/${encodeURIComponent(parts[3])}`;
+    }
   }
 
   return `/${suffix}`;
