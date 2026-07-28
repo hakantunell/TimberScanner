@@ -54,7 +54,7 @@ function appendCapture(capture) {
   figure.dataset.captureId = capture.id;
 
   const image = document.createElement('img');
-  image.loading = 'lazy';
+  image.loading = 'eager';
   image.decoding = 'async';
   const url = URL.createObjectURL(capture.blob);
   previewUrls.add(url);
