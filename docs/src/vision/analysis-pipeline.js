@@ -36,5 +36,5 @@ async function runPipeline() {
   }
 }
 
-window.addEventListener('timberscanner:selection-updated', () => scheduleAnalysisPipeline('bildurval uppdaterat'));
+window.addEventListener('timberscanner:image-selection', () => scheduleAnalysisPipeline('bildurval uppdaterat'));
 window.timberscannerScheduleAnalysis = scheduleAnalysisPipeline;
