@@ -7,6 +7,10 @@ const status = document.querySelector('#camera-status');
 
 let starting = false;
 
+function isUsbMode() {
+  return document.body.dataset.cameraSource === 'usb';
+}
+
 function setStatus(message) {
   if (status) status.textContent = message;
   console.info(`[camera] ${message}`);
@@ -16,11 +20,11 @@ function describeCameraError(error) {
   const name = error?.name ?? 'Error';
   if (!window.isSecureContext) return 'Kameran kräver HTTPS.';
   if (name === 'NotAllowedError' || name === 'SecurityError') {
-    return 'Kameraåtkomst nekades. Öppna Safari-inställningar för timberscanner.tunell.org och välj Tillåt kamera.';
+    return 'Kameraåtkomst nekades. Tillåt kamera för timberscanner.tunell.org i webbläsaren.';
   }
   if (name === 'NotFoundError') return 'Ingen kamera hittades.';
   if (name === 'NotReadableError') return 'Kameran används av en annan app eller kunde inte öppnas.';
-  if (name === 'CameraTimeoutError') return 'Safari svarade inte på kameraförfrågan inom 12 sekunder.';
+  if (name === 'CameraTimeoutError') return 'Webbläsaren svarade inte på kameraförfrågan inom 12 sekunder.';
   return `${name}: ${error?.message || 'Okänt kamerafel'}`;
 }
 
@@ -35,21 +39,60 @@ function withTimeout(promise, milliseconds) {
   ]);
 }
 
-async function requestCamera() {
-  if (!navigator.mediaDevices?.getUserMedia) {
-    throw new Error('Webbläsaren saknar stöd för getUserMedia.');
-  }
+function stopStream(stream) {
+  stream?.getTracks?.().forEach((track) => track.stop());
+}
 
-  setStatus('Begär kameraåtkomst från Safari…');
-  const mediaStream = await withTimeout(
+function preferredUsbDevice(devices) {
+  const cameras = devices.filter((device) => device.kind === 'videoinput');
+  const externalPattern = /(usb|logitech|c920|c922|brio|webcam|external)/i;
+  const integratedPattern = /(integrated|inbyggd|facetime|front|internal)/i;
+  return cameras.find((device) => externalPattern.test(device.label))
+    ?? cameras.find((device) => device.label && !integratedPattern.test(device.label))
+    ?? null;
+}
+
+async function openInitialStream() {
+  const videoConstraints = isUsbMode()
+    ? { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }
+    : { facingMode: { ideal: 'environment' } };
+  return withTimeout(
+    navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false }),
+    12000,
+  );
+}
+
+async function preferExternalUsbCamera(initialStream) {
+  if (!isUsbMode() || !navigator.mediaDevices.enumerateDevices) return initialStream;
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const preferred = preferredUsbDevice(devices);
+  const currentId = initialStream.getVideoTracks()[0]?.getSettings?.().deviceId;
+  if (!preferred?.deviceId || preferred.deviceId === currentId) return initialStream;
+
+  setStatus(`Byter till USB-kamera: ${preferred.label || 'extern kamera'}…`);
+  stopStream(initialStream);
+  return withTimeout(
     navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment' },
+      video: {
+        deviceId: { exact: preferred.deviceId },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        frameRate: { ideal: 30 },
+      },
       audio: false,
     }),
     12000,
   );
+}
 
-  window.__timberCameraStream?.getTracks?.().forEach((track) => track.stop());
+async function requestCamera() {
+  if (!navigator.mediaDevices?.getUserMedia) throw new Error('Webbläsaren saknar stöd för getUserMedia.');
+
+  setStatus(isUsbMode() ? 'Begär åtkomst till USB-webbkamera…' : 'Begär kameraåtkomst…');
+  let mediaStream = await openInitialStream();
+  mediaStream = await preferExternalUsbCamera(mediaStream);
+
+  stopStream(window.__timberCameraStream);
   window.__timberCameraStream = mediaStream;
   video.srcObject = mediaStream;
   video.muted = true;
@@ -66,12 +109,14 @@ async function requestCamera() {
   }
   if (!video.videoWidth || !video.videoHeight) throw new Error('Kameran öppnades men gav ingen bild.');
 
+  const track = mediaStream.getVideoTracks()[0];
+  const label = track?.label ? ` · ${track.label}` : '';
   if (placeholder) placeholder.hidden = true;
   if (captureButton) captureButton.disabled = false;
   if (newPassButton) newPassButton.disabled = false;
-  setStatus(`Kamera klar · ${video.videoWidth}×${video.videoHeight}`);
+  setStatus(`Kamera klar · ${video.videoWidth}×${video.videoHeight}${label}`);
   window.dispatchEvent(new CustomEvent('timberscanner:camera-ready', {
-    detail: { width: video.videoWidth, height: video.videoHeight },
+    detail: { width: video.videoWidth, height: video.videoHeight, label: track?.label ?? '' },
   }));
 }
 
@@ -102,7 +147,7 @@ window.TimberCamera = Object.freeze({
   isReady: () => Boolean(video?.videoWidth && video?.videoHeight),
   getStream: () => window.__timberCameraStream ?? null,
   stop: () => {
-    window.__timberCameraStream?.getTracks?.().forEach((track) => track.stop());
+    stopStream(window.__timberCameraStream);
     window.__timberCameraStream = null;
     if (video) video.srcObject = null;
     if (startButton) startButton.disabled = false;
@@ -116,5 +161,5 @@ window.TimberCamera = Object.freeze({
   },
 });
 
-setStatus(`Kameramodul v20260728-6 redo · endast telefonkod laddad · säker anslutning: ${window.isSecureContext ? 'ja' : 'nej'}`);
+setStatus(`Kameramodul v20260728-26 redo · källa: ${isUsbMode() ? 'USB' : 'mobil'} · säker anslutning: ${window.isSecureContext ? 'ja' : 'nej'}`);
 window.addEventListener('pagehide', () => window.TimberCamera?.stop());
