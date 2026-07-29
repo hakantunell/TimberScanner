@@ -1,4 +1,4 @@
-const VERSION = '20260729-56';
+const VERSION = '20260729-57';
 const params = new URLSearchParams(window.location.search);
 const mobileMode = params.get('mode') === 'capture' || params.get('mode') === 'mobile';
 const photoMode = params.get('analysis') === 'photo' || params.get('analysis') === 'orb';
@@ -28,6 +28,6 @@ if (mobileMode) {
     await load('../vision/chain-repair-and-cloud.js');
     await load('../vision/viewer-quality-queue.js');
   } else {
-    await load('./laser-bootstrap-v56.js');
+    await load('./laser-bootstrap-v57.js');
   }
 }
