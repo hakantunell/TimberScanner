@@ -1,4 +1,4 @@
-const VERSION = '20260729-53';
+const VERSION = '20260729-54';
 const params = new URLSearchParams(window.location.search);
 const mobileMode = params.get('mode') === 'capture' || params.get('mode') === 'mobile';
 const photoMode = params.get('analysis') === 'photo' || params.get('analysis') === 'orb';
@@ -13,6 +13,8 @@ if (mobileMode) {
   await load('../capture/camera-button-fix.js');
   await load('../scanning/auto-capture.js');
 } else {
+  // Laserläget startar endast kamera och grund-UI. Ingen analysloop eller
+  // MutationObserver får starta under sidans initiering.
   await load('./usb-app.js');
   await load('../capture/camera-controller.js');
   await load('../capture/camera-button-fix.js');
@@ -28,9 +30,6 @@ if (mobileMode) {
     await load('../vision/chain-repair-and-cloud.js');
     await load('../vision/viewer-quality-queue.js');
   } else {
-    await load('../vision/lean-laser-line-v52.js');
-    await load('../vision/auto-laser-profile-collector-v47.js');
-    await load('./compact-laser-ui-v52.js');
-    await load('./deferred-rotation-loader-v53.js');
+    await load('./laser-bootstrap-v54.js');
   }
 }
