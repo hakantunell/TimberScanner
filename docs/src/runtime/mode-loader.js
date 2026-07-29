@@ -1,4 +1,4 @@
-const VERSION = '20260729-51';
+const VERSION = '20260729-52';
 const params = new URLSearchParams(window.location.search);
 const mobileMode = params.get('mode') === 'capture' || params.get('mode') === 'mobile';
 const photoMode = params.get('analysis') === 'photo' || params.get('analysis') === 'orb';
@@ -16,22 +16,21 @@ if (mobileMode) {
   await load('./usb-app.js');
   await load('../capture/camera-controller.js');
   await load('../capture/camera-button-fix.js');
-  await load('../scanning/auto-capture.js');
-  await load('../vision/analysis-pipeline.js');
-  await load('../vision/laser-line-lab-v45.js');
-  await load('../vision/auto-laser-profile-collector-v47.js');
-  await load('../vision/rotation-and-scale-v48.js');
-  await load('../vision/automatic-t-marker-v50.js');
-  await load('../vision/strict-t-marker-v51.js');
 
   if (photoMode) {
+    await load('../scanning/auto-capture.js');
+    await load('../vision/analysis-pipeline.js');
     await load('../vision/segmentation-lab-v43.js');
     await load('../vision/worker-superpixel-v43.js');
     await load('../vision/sequential-feature-matching.js');
     await load('../vision/match-classification-normalizer.js');
     await load('../vision/roi-overlay.js');
     await load('../vision/chain-repair-and-cloud.js');
+    await load('../vision/viewer-quality-queue.js');
+  } else {
+    await load('../vision/lean-laser-line-v52.js');
+    await load('../vision/auto-laser-profile-collector-v47.js');
+    await load('../vision/strict-t-marker-v51.js');
+    await load('./compact-laser-ui-v52.js');
   }
-
-  await load('../vision/viewer-quality-queue.js');
 }
