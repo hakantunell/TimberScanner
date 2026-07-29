@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#17351f">
   <title>TimberScanner</title>
-  <link rel="stylesheet" href="styles.css?v=20260729-52">
-  <script type="importmap">{"imports":{"./src/transfer/cloud-relay.js":"./src/transfer/cloud-relay.js?v=20260729-52"}}</script>
+  <link rel="stylesheet" href="styles.css?v=20260729-53">
+  <script type="importmap">{"imports":{"./src/transfer/cloud-relay.js":"./src/transfer/cloud-relay.js?v=20260729-53"}}</script>
   <style>
-    .segmentation-lab-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:14px}.segmentation-lab-view{margin:0;background:#0d1210;border-radius:12px;overflow:hidden}.segmentation-lab-view canvas{display:block;width:100%;height:auto;image-rendering:auto}.segmentation-lab-view figcaption{padding:8px 10px;color:#fff;font-size:13px}.segmentation-candidates{display:grid;gap:8px;margin-top:14px}.segmentation-candidate{display:grid;gap:4px;padding:10px 12px;border:1px solid #ccd6cf;border-radius:10px}.segmentation-candidate.selected{border-color:#18884b;box-shadow:inset 4px 0 #18884b}.segmentation-candidate small{line-height:1.4}.segmentation-lab-actions{display:flex;flex-wrap:wrap;align-items:end;gap:12px;margin-top:12px}.laser-setting{display:grid;gap:4px;min-width:180px}.laser-setting input,.laser-setting select{width:100%}.mode-note{margin-top:8px}.camera-card{position:relative}.camera-card video{position:relative;z-index:1}details{margin-top:12px}details>summary{cursor:pointer;font-weight:700;padding:10px 0}
+    .segmentation-lab-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:14px}.segmentation-lab-view{margin:0;background:#0d1210;border-radius:12px;overflow:hidden}.segmentation-lab-view canvas{display:block;width:100%;height:auto;image-rendering:auto}.segmentation-lab-view figcaption{padding:8px 10px;color:#fff;font-size:13px}.segmentation-candidates{display:grid;gap:8px;margin-top:14px}.segmentation-candidate{display:grid;gap:4px;padding:10px 12px;border:1px solid #ccd6cf;border-radius:10px}.segmentation-candidate.selected{border-color:#18884b;box-shadow:inset 4px 0 #18884b}.segmentation-candidate small{line-height:1.4}.segmentation-lab-actions{display:flex;flex-wrap:wrap;align-items:end;gap:12px;margin-top:12px}.laser-setting{display:grid;gap:4px;min-width:180px}.laser-setting input,.laser-setting select{width:100%}.mode-note{margin-top:8px}
   </style>
 </head>
 <body>
@@ -17,7 +17,7 @@
     <section id="role-picker" class="panel"><h2>Kamerakälla</h2><div class="role-grid"><button id="viewer-mode">USB-webbkamera</button><button id="capture-mode">Mobilkamera (senare)</button></div></section>
     <section id="connection-screen" class="panel" hidden><h2>Anslut telefon</h2><p id="pairing-help"></p><div id="qr-code" class="qr-code"></div><div id="manual-connect"><label id="peer-label" for="peer-code">Sessionskod</label><div class="peer-row"><input id="peer-code" autocomplete="off" autocapitalize="none" spellcheck="false"><button id="connect-peer">Anslut</button></div></div><p><strong>Status:</strong> <span id="connection-status">Inte ansluten</span></p><p class="diagnostic-note"><strong>Felsökning:</strong> <span id="viewer-trace">Väntar på klick</span></p></section>
     <section id="work-screen" hidden>
-      <section class="work-toolbar panel"><div><strong id="work-status">USB-kamera · konsoliderad laserprofil</strong><span id="work-detail">En kamerabild, en analyskedja och automatisk profilinsamling</span></div><button id="show-pairing" class="secondary">Mobilkamera</button></section>
+      <section class="work-toolbar panel"><div><strong id="work-status">USB-kamera · automatisk laserprofil</strong><span id="work-detail">Starta kameran och profilinsamlingen, rulla sedan stocken kontinuerligt</span></div><button id="show-pairing" class="secondary">Mobilkamera</button></section>
       <section id="capture-panel">
         <section class="camera-card"><video id="camera" playsinline muted></video><canvas id="snapshot" hidden></canvas><div id="camera-placeholder">Kameran är inte startad</div></section>
         <p class="panel"><strong>Kamera:</strong> <span id="camera-status">Kameramodulen laddas…</span></p>
@@ -29,24 +29,24 @@
       <section class="status-grid"><article><span>Bildrutor</span><strong id="image-count">0</strong></article><article><span>Aktuell rotation</span><strong id="pass-count">1</strong></article><article><span>Analyserade</span><strong id="analysis-count">0</strong></article><article><span>Urval</span><strong id="storage-status">Klar</strong></article></section>
 
       <section id="laser-line-lab" class="diagnostic-panel" hidden>
-        <div class="diagnostic-heading"><div><p class="eyebrow">Konsoliderad analys</p><h2>Laserprofil och rotation</h2></div><div><strong id="laser-line-status">Väntar på kamerabild</strong><span id="laser-line-detail">Laser och T-markör visas ovanpå huvudbilden</span></div></div>
+        <div class="diagnostic-heading"><div><p class="eyebrow">Laserlinjelaboratorium</p><h2>Automatisk subpixelprofil</h2></div><div><strong id="laser-line-status">Väntar på kamerabild</strong><span id="laser-line-detail">Programmet verifierar flera bildrutor innan en profil sparas</span></div></div>
         <div class="segmentation-lab-actions">
           <button id="analyze-laser-frame" type="button">Analysera kamerabild</button>
           <label class="laser-setting" for="laser-orientation">Laserlinjens riktning<select id="laser-orientation"><option value="auto" selected>Auto</option><option value="vertical">Vertikal</option><option value="horizontal">Horisontell</option></select></label>
           <label class="laser-setting" for="laser-threshold">Känslighet <span id="laser-threshold-value">62</span><input id="laser-threshold" type="range" min="10" max="95" value="62"></label>
         </div>
         <div id="laser-line-grid" class="segmentation-lab-grid"></div>
-        <p class="diagnostic-note">Laserprofil och rotationsmarkör visas i den stora kamerabilden.</p>
+        <p class="diagnostic-note">Rotationsanalysen laddas först när automatisk profilinsamling startas. Kameran ska därför kunna starta utan att blockeras av T-sökningen.</p>
       </section>
 
-      <section id="segmentation-lab" class="diagnostic-panel" hidden><div class="diagnostic-heading"><div><p class="eyebrow">Segmenteringslaboratorium</p><h2>Superpixlar och regionväxning</h2></div><div><strong id="segmentation-lab-status">Väntar på en bild</strong><span id="segmentation-lab-detail">Alternativt fotoläge</span></div></div><div id="segmentation-lab-grid" class="segmentation-lab-grid"></div><div id="segmentation-candidates" class="segmentation-candidates"></div></section>
-      <section id="sparse-reconstruction" class="diagnostic-panel" hidden><div class="diagnostic-heading"><div><p class="eyebrow">Första 3D-resultatet</p><h2>Preliminärt punktmoln</h2></div><div><strong id="sparse-status">Väntar på bildkedjan</strong><span id="sparse-detail">Ingen rekonstruktion ännu</span></div></div><canvas id="sparse-point-cloud"></canvas></section>
-      <section id="feature-matching" class="diagnostic-panel" hidden><div class="diagnostic-heading"><div><p class="eyebrow">Analyspipeline</p><h2>Fotogrammetri</h2></div><div><strong id="feature-match-status">Väntar</strong><span id="feature-match-detail">Alternativt analysläge</span></div></div><canvas id="feature-match-canvas"></canvas><div id="match-chain-list"></div></section>
-      <section id="contour-diagnostics" class="diagnostic-panel" hidden><canvas id="contour-source" hidden></canvas><canvas id="contour-overlay"></canvas></section>
-      <section class="analysis-section"><h2>Analysunderlag</h2><div id="captures" class="captures"></div></section>
+      <section id="segmentation-lab" class="diagnostic-panel" hidden><div class="diagnostic-heading"><div><p class="eyebrow">Segmenteringslaboratorium</p><h2>Superpixlar och regionväxning</h2></div><div><strong id="segmentation-lab-status">Väntar på en bild</strong><span id="segmentation-lab-detail">Superpixlar, startregioner, sammanslagning och kandidatpoäng visas här</span></div></div><div class="segmentation-lab-actions"><button id="rerun-segmentation-lab" class="secondary" type="button">Analysera senaste bild igen</button></div><div id="segmentation-lab-grid" class="segmentation-lab-grid"></div><div id="segmentation-candidates" class="segmentation-candidates"></div><p class="diagnostic-note">Varje kandidat börjar i en superpixel nära bildens mitt och växer över angränsande superpixlar.</p></section>
+      <section id="sparse-reconstruction" class="diagnostic-panel" hidden><div class="diagnostic-heading"><div><p class="eyebrow">Första 3D-resultatet</p><h2>Preliminärt punktmoln</h2></div><div><strong id="sparse-status">Väntar på bildkedjan</strong><span id="sparse-detail">Ingen rekonstruktion ännu</span></div></div><div class="diagnostic-canvas-wrap"><canvas id="sparse-point-cloud"></canvas></div><p class="diagnostic-note">Detta är ett parallaxbaserat diagnostikmoln utan metrisk skala.</p></section>
+      <section id="feature-matching" class="diagnostic-panel" hidden><div class="diagnostic-heading"><div><p class="eyebrow">Analyspipeline</p><h2>Superpixelbaserad stockdetektering</h2></div><div><strong id="feature-match-status">Väntar på två valda bilder</strong><span id="feature-match-detail">Superpixelregionväxning v43</span></div></div><div class="diagnostic-canvas-wrap"><canvas id="feature-match-canvas"></canvas></div><section class="match-chain"><div class="match-chain-heading"><strong>Bildkedja</strong><span id="match-chain-summary">Ingen kedja analyserad</span></div><div id="match-chain-list" class="match-chain-list"></div></section><p class="diagnostic-note">Fotogrammetriläget är ett alternativt analysläge.</p></section>
+      <section id="contour-diagnostics" class="diagnostic-panel" hidden><div class="diagnostic-heading"><div><p class="eyebrow">Första geometristeget</p><h2>Konturdiagnostik</h2></div><div><strong id="contour-status">Väntar på bildruta</strong><span id="contour-coverage">Ingen analys ännu</span></div></div><div class="diagnostic-canvas-wrap"><canvas id="contour-source" hidden></canvas><canvas id="contour-overlay"></canvas></div><p class="diagnostic-note">Konturdiagnostik är fortsatt avstängd.</p></section>
+      <section class="analysis-section"><h2>Analysunderlag</h2><p>Grön ram betyder vald för fortsatt analys. Nedtonade bilder är oskarpa eller nästan identiska med en skarpare granne.</p><div id="captures" class="captures"></div></section>
     </section>
   </main>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script type="module" src="src/runtime/mode-loader.js?v=20260729-52"></script>
+  <script type="module" src="src/runtime/mode-loader.js?v=20260729-53"></script>
 </body>
 </html>
