@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#17351f">
   <title>TimberScanner</title>
-  <link rel="stylesheet" href="styles.css?v=20260729-55">
-  <script type="importmap">{"imports":{"./src/transfer/cloud-relay.js":"./src/transfer/cloud-relay.js?v=20260729-55"}}</script>
+  <link rel="stylesheet" href="styles.css?v=20260729-56">
+  <script type="importmap">{"imports":{"./src/transfer/cloud-relay.js":"./src/transfer/cloud-relay.js?v=20260729-56"}}</script>
   <style>
     .segmentation-lab-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:14px}.segmentation-lab-view{margin:0;background:#0d1210;border-radius:12px;overflow:hidden}.segmentation-lab-view canvas{display:block;width:100%;height:auto;image-rendering:auto}.segmentation-lab-view figcaption{padding:8px 10px;color:#fff;font-size:13px}.segmentation-candidates{display:grid;gap:8px;margin-top:14px}.segmentation-candidate{display:grid;gap:4px;padding:10px 12px;border:1px solid #ccd6cf;border-radius:10px}.segmentation-candidate.selected{border-color:#18884b;box-shadow:inset 4px 0 #18884b}.segmentation-candidate small{line-height:1.4}.segmentation-lab-actions{display:flex;flex-wrap:wrap;align-items:end;gap:12px;margin-top:12px}.laser-setting{display:grid;gap:4px;min-width:180px}.laser-setting input,.laser-setting select{width:100%}.mode-note{margin-top:8px}
   </style>
@@ -36,7 +36,7 @@
           <label class="laser-setting" for="laser-threshold">Känslighet <span id="laser-threshold-value">62</span><input id="laser-threshold" type="range" min="10" max="95" value="62"></label>
         </div>
         <div id="laser-line-grid" class="segmentation-lab-grid"></div>
-        <p class="diagnostic-note">T-rotation är tillfälligt avstängd eftersom den gamla globala sökningen blockerade webbläsarens huvudtråd.</p>
+        <p class="diagnostic-note">Profilinsamlingen accepterar jämn rotation och visar orsaken när en profil klassas som osäker. T-rotation är fortfarande tillfälligt avstängd.</p>
       </section>
 
       <section id="segmentation-lab" class="diagnostic-panel" hidden><div class="diagnostic-heading"><div><p class="eyebrow">Segmenteringslaboratorium</p><h2>Superpixlar och regionväxning</h2></div><div><strong id="segmentation-lab-status">Väntar på en bild</strong><span id="segmentation-lab-detail">Superpixlar, startregioner, sammanslagning och kandidatpoäng visas här</span></div></div><div class="segmentation-lab-actions"><button id="rerun-segmentation-lab" class="secondary" type="button">Analysera senaste bild igen</button></div><div id="segmentation-lab-grid" class="segmentation-lab-grid"></div><div id="segmentation-candidates" class="segmentation-candidates"></div><p class="diagnostic-note">Varje kandidat börjar i en superpixel nära bildens mitt och växer över angränsande superpixlar.</p></section>
@@ -47,6 +47,6 @@
     </section>
   </main>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script type="module" src="src/runtime/mode-loader.js?v=20260729-55"></script>
+  <script type="module" src="src/runtime/mode-loader.js?v=20260729-56"></script>
 </body>
 </html>
