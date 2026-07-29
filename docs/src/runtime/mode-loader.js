@@ -1,4 +1,4 @@
-const VERSION = '20260729-50';
+const VERSION = '20260729-51';
 const params = new URLSearchParams(window.location.search);
 const mobileMode = params.get('mode') === 'capture' || params.get('mode') === 'mobile';
 const photoMode = params.get('analysis') === 'photo' || params.get('analysis') === 'orb';
@@ -22,6 +22,7 @@ if (mobileMode) {
   await load('../vision/auto-laser-profile-collector-v47.js');
   await load('../vision/rotation-and-scale-v48.js');
   await load('../vision/automatic-t-marker-v50.js');
+  await load('../vision/strict-t-marker-v51.js');
 
   if (photoMode) {
     await load('../vision/segmentation-lab-v43.js');
