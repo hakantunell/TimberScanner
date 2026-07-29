@@ -1,4 +1,4 @@
-const VERSION = '20260729-44';
+const VERSION = '20260729-45';
 const params = new URLSearchParams(window.location.search);
 const mobileMode = params.get('mode') === 'capture' || params.get('mode') === 'mobile';
 const photoMode = params.get('analysis') === 'photo' || params.get('analysis') === 'orb';
@@ -18,7 +18,7 @@ if (mobileMode) {
   await load('../capture/camera-button-fix.js');
   await load('../scanning/auto-capture.js');
   await load('../vision/analysis-pipeline.js');
-  await load('../vision/laser-line-lab-v44.js');
+  await load('../vision/laser-line-lab-v45.js');
 
   if (photoMode) {
     await load('../vision/segmentation-lab-v43.js');
