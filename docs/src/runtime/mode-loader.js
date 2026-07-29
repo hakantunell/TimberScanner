@@ -1,4 +1,4 @@
-const VERSION = '20260729-52';
+const VERSION = '20260729-53';
 const params = new URLSearchParams(window.location.search);
 const mobileMode = params.get('mode') === 'capture' || params.get('mode') === 'mobile';
 const photoMode = params.get('analysis') === 'photo' || params.get('analysis') === 'orb';
@@ -30,7 +30,7 @@ if (mobileMode) {
   } else {
     await load('../vision/lean-laser-line-v52.js');
     await load('../vision/auto-laser-profile-collector-v47.js');
-    await load('../vision/strict-t-marker-v51.js');
     await load('./compact-laser-ui-v52.js');
+    await load('./deferred-rotation-loader-v53.js');
   }
 }
